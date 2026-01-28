@@ -4,8 +4,16 @@ import { ChatViewProvider } from './chatViewProvider';
 import { MemoryService } from './memory';
 import { getPendingEditForFile, applyPendingEdit, rejectPendingEdit, onPendingEditsChanged, getPendingEditsCount, getAllPendingEdits } from './tools';
 
+// Status bar item for showing generation status
+let statusBarItem: vscode.StatusBarItem;
+
 export function activate(context: vscode.ExtensionContext) {
 	console.log('LocalAI extension is now active!');
+
+	// Create status bar item
+	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	statusBarItem.name = 'LocalAI Status';
+	context.subscriptions.push(statusBarItem);
 
 	// Initialize memory service
 	const memoryService = new MemoryService(context);
@@ -91,11 +99,60 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	context.subscriptions.push(openChatCommand, applyEditCommand, rejectEditCommand);
+	// Stop generation command (for status bar click)
+	const stopGenerationCommand = vscode.commands.registerCommand('localai.stopGeneration', () => {
+		// ChatViewProvider'a stop mesajı gönder
+		chatViewProvider.stopGeneration();
+	});
+
+	context.subscriptions.push(openChatCommand, applyEditCommand, rejectEditCommand, stopGenerationCommand);
 }
 
 export function deactivate() {
 	if (ChatPanel.currentPanel) {
 		ChatPanel.currentPanel.dispose();
+	}
+}
+
+// Status bar update functions
+export function showGeneratingStatus(model: string): void {
+	if (statusBarItem) {
+		statusBarItem.text = `$(sync~spin) LocalAI: Generating...`;
+		statusBarItem.tooltip = `Model: ${model}\nClick to stop`;
+		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+		statusBarItem.command = 'localai.stopGeneration';
+		statusBarItem.show();
+	}
+}
+
+export function updateGeneratingStatus(elapsed: number): void {
+	if (statusBarItem) {
+		statusBarItem.text = `$(sync~spin) LocalAI: ${elapsed}s`;
+		if (elapsed >= 60) {
+			statusBarItem.text = `$(warning) LocalAI: ${elapsed}s - slow response`;
+			statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+		}
+	}
+}
+
+export function hideGeneratingStatus(): void {
+	if (statusBarItem) {
+		statusBarItem.hide();
+	}
+}
+
+export function showReadyStatus(): void {
+	if (statusBarItem) {
+		statusBarItem.text = `$(check) LocalAI: Ready`;
+		statusBarItem.tooltip = 'LocalAI is ready';
+		statusBarItem.backgroundColor = undefined;
+		statusBarItem.command = undefined;
+		statusBarItem.show();
+		// 3 saniye sonra gizle
+		setTimeout(() => {
+			if (statusBarItem.text === '$(check) LocalAI: Ready') {
+				statusBarItem.hide();
+			}
+		}, 3000);
 	}
 }

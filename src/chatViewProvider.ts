@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { OllamaService, OllamaMessage } from './ollama';
 import { getOllamaTools, getSystemPrompt, executeTool, applyPendingEdit, rejectPendingEdit, applyAllPendingEdits, rejectAllPendingEdits, getPendingEditsCount, onPendingEditsChanged } from './tools';
 import { MemoryService, ChatSession } from './memory';
+import { showGeneratingStatus, updateGeneratingStatus, hideGeneratingStatus, showReadyStatus } from './extension';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'localai.chatView';
@@ -174,7 +175,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private stopGeneration(): void {
+    public stopGeneration(): void {
         console.log('[LocalAI] Stop generation requested');
         if (this.abortController) {
             this.abortController.abort();
@@ -182,6 +183,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         // Reset waiting state
         this.waitingForApproval = false;
+        // Status bar'ı temizle
+        hideGeneratingStatus();
         // Notify UI
         this.view?.webview.postMessage({ command: 'endResponse' });
         this.view?.webview.postMessage({
@@ -542,6 +545,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         try {
             await this.runAgentLoop();
         } catch (error) {
+            // Hata durumunda status bar'ı temizle
+            hideGeneratingStatus();
+
             if ((error as Error).name === 'AbortError') {
                 this.view.webview.postMessage({
                     command: 'appendToken',
@@ -556,7 +562,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
         }
 
-        this.view.webview.postMessage({ command: 'endResponse' });
+        // Eğer approval beklemiyorsak endResponse gönder
+        // (approval beklerken runAgentLoop içinde zaten gönderiliyor)
+        if (!this.waitingForApproval) {
+            this.view.webview.postMessage({ command: 'endResponse' });
+        }
     }
 
     private async runAgentLoop(): Promise<void> {
@@ -564,6 +574,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         const maxIterations = 10;
         let iteration = 0;
+        let statusUpdateInterval: NodeJS.Timeout | null = null;
+        const loopStartTime = Date.now();
 
         this.abortController = new AbortController();
 
@@ -572,6 +584,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (!activeAgentModel) {
             throw new Error('Lütfen en az bir model seçin');
         }
+
+        // Status bar'ı göster ve güncelleme başlat
+        showGeneratingStatus(activeAgentModel);
+        statusUpdateInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - loopStartTime) / 1000);
+            updateGeneratingStatus(elapsed);
+        }, 1000);
 
         while (iteration < maxIterations) {
             if (this.abortController?.signal.aborted) {
@@ -707,6 +726,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                             content: 'Dosya değişiklikleri diff editörde gösteriliyor. Lütfen değişiklikleri inceleyin ve onaylayın veya reddedin.'
                         });
                         await this.saveCurrentSession();
+                        // Status bar ve interval temizle
+                        if (statusUpdateInterval) {
+                            clearInterval(statusUpdateInterval);
+                        }
+                        hideGeneratingStatus();
+                        // UI'a response bitti bildir
+                        this.view?.webview.postMessage({ command: 'endResponse' });
                         return;  // Loop'tan çık
                     }
                 }
@@ -719,6 +745,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 break;
             }
         }
+
+        // Status bar'ı gizle ve interval'i temizle
+        if (statusUpdateInterval) {
+            clearInterval(statusUpdateInterval);
+        }
+        hideGeneratingStatus();
+        showReadyStatus();
 
         this.abortController = null;
     }
@@ -1137,9 +1170,152 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         .chat-container {
             flex: 1;
             overflow-y: auto;
-            padding: 12px;
+            padding: 12px 16px 12px 20px;
             font-size: 13px;
         }
+        /* Timeline layout */
+        .timeline {
+            position: relative;
+            border-left: 2px solid #3c3c3c;
+            margin-left: 6px;
+            padding-left: 16px;
+        }
+        /* Timeline item */
+        .timeline-item {
+            position: relative;
+            padding-bottom: 16px;
+        }
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+        /* Timeline dot - centered on the border line */
+        .timeline-dot {
+            position: absolute;
+            left: -22px;
+            top: 2px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #1e1e1e;
+            border: 2px solid var(--term-dim);
+        }
+        .timeline-item.user .timeline-dot {
+            border-color: var(--term-green);
+            background: var(--term-green);
+        }
+        .timeline-item.assistant .timeline-dot {
+            border-color: var(--term-cyan);
+        }
+        .timeline-item.assistant.complete .timeline-dot {
+            background: var(--term-cyan);
+        }
+        .timeline-item.tool .timeline-dot {
+            width: 6px;
+            height: 6px;
+            left: -20px;
+            top: 5px;
+            border-color: var(--term-yellow);
+            background: var(--term-yellow);
+        }
+        .timeline-item.error .timeline-dot {
+            border-color: var(--term-red);
+            background: var(--term-red);
+        }
+        /* Generating dot - simple opacity pulse, no size change */
+        .timeline-item.generating .timeline-dot {
+            background: var(--term-cyan);
+            animation: dot-pulse 1s ease-in-out infinite;
+        }
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        /* Timeline header */
+        .timeline-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            font-size: 11px;
+            flex-wrap: wrap;
+        }
+        .timeline-sender {
+            font-weight: 600;
+        }
+        .timeline-item.user .timeline-sender {
+            color: var(--term-green);
+        }
+        .timeline-item.assistant .timeline-sender {
+            color: var(--term-cyan);
+        }
+        .timeline-time {
+            color: var(--term-dim);
+            font-size: 10px;
+        }
+        /* Timeline content */
+        .timeline-content {
+            background: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: 10px 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+            color: #d4d4d4;
+        }
+        .timeline-item.user .timeline-content {
+            background: #1a2e1a;
+            border-color: #2d4a2d;
+        }
+        .timeline-item.error .timeline-content {
+            background: #2e1a1a;
+            border-color: #4a2d2d;
+            color: var(--term-red);
+        }
+        /* Tool items - compact inline */
+        .timeline-item.tool {
+            padding-bottom: 8px;
+        }
+        .timeline-item.tool .timeline-content {
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-size: 12px;
+            color: var(--term-dim);
+        }
+        .tool-action {
+            color: var(--term-cyan);
+        }
+        .tool-detail {
+            color: var(--term-dim);
+            opacity: 0.8;
+        }
+        .tool-result {
+            color: var(--term-green);
+            margin-left: 8px;
+            font-size: 11px;
+        }
+        /* Agent thinking - inline */
+        .timeline-item.thinking {
+            padding-bottom: 8px;
+        }
+        .timeline-item.thinking .timeline-dot {
+            width: 6px;
+            height: 6px;
+            left: -20px;
+            top: 5px;
+            border-color: var(--term-dim);
+            background: var(--term-dim);
+        }
+        .timeline-item.thinking .timeline-content {
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-size: 11px;
+            color: var(--term-dim);
+            font-style: italic;
+        }
+        /* Legacy support */
         .line {
             margin: 2px 0;
             white-space: pre-wrap;
@@ -1148,31 +1324,20 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         .line.user {
             color: var(--term-green);
         }
-        .line.user::before {
-            content: '❯ ';
-            color: var(--term-green);
-        }
         .line.assistant {
             color: #d4d4d4;
-            padding-left: 18px;
         }
         .line.error {
             color: var(--term-red);
-        }
-        .line.error::before {
-            content: '✗ ';
         }
         .line.tool {
             color: var(--term-dim);
             font-size: 12px;
             padding-left: 8px;
             border-left: 2px solid var(--term-yellow);
-            margin-left: 8px;
+            margin-left: 32px;
             padding-top: 2px;
             padding-bottom: 2px;
-        }
-        .line.tool .tool-name {
-            color: var(--term-yellow);
         }
         .line.tool .tool-action {
             color: var(--term-cyan);
@@ -1186,7 +1351,7 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
             font-size: 11px;
             font-style: italic;
             padding-left: 8px;
-            margin: 4px 0;
+            margin: 4px 0 4px 32px;
             opacity: 0.8;
         }
         .line.agent-thinking .thinking-icon {
@@ -1195,13 +1360,12 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         .line.tool-result {
             color: var(--term-dim);
             font-size: 11px;
-            padding-left: 18px;
-            max-height: 200px;
+            max-height: 150px;
             overflow-y: auto;
-            border-left: 2px solid #3c3c3c;
-            margin-left: 18px;
-            padding: 4px 8px;
-            background: #252526;
+            margin-left: 32px;
+            padding: 6px 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
         }
         .diff-container {
             background: #1a1a1a;
@@ -1294,19 +1458,24 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
             padding: 0;
         }
         .input-section {
-            padding: 8px 12px;
-            background: #252526;
+            padding: 12px;
+            background: #1e1e1e;
             border-top: 1px solid #3c3c3c;
+        }
+        .input-wrapper {
             display: flex;
+            background: #2d2d2d;
+            border: 1px solid #3c3c3c;
+            border-radius: 8px;
+            padding: 8px 12px;
             gap: 8px;
-            align-items: center;
+            align-items: flex-end;
         }
-        .input-section::before {
-            content: '❯';
-            color: var(--term-green);
-            font-weight: bold;
+        .input-wrapper:focus-within {
+            border-color: var(--term-cyan);
+            box-shadow: 0 0 0 1px var(--term-cyan);
         }
-        .input-section input {
+        .input-section textarea {
             flex: 1;
             background: transparent;
             color: #d4d4d4;
@@ -1314,39 +1483,74 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
             outline: none;
             font-family: inherit;
             font-size: 13px;
+            line-height: 1.5;
+            resize: none;
+            min-height: 24px;
+            max-height: 200px;
+            overflow-y: auto;
         }
-        .input-section button {
+        .input-section textarea::placeholder {
+            color: var(--term-dim);
+            opacity: 0.7;
+        }
+        .input-actions {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .input-actions button {
             background: transparent;
             color: var(--term-dim);
             border: none;
             cursor: pointer;
             font-family: inherit;
             padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.15s;
         }
-        .input-section button:hover {
+        .input-actions button:hover {
+            background: #3c3c3c;
             color: var(--term-cyan);
         }
-        .input-section button.stop {
+        .input-actions button.stop {
             color: var(--term-red);
+        }
+        .input-actions button.stop:hover {
+            background: rgba(224, 108, 117, 0.2);
+        }
+        .input-actions button.send {
+            color: var(--term-green);
+        }
+        .input-actions button.send:hover {
+            background: rgba(78, 201, 87, 0.2);
         }
         .generating {
             display: inline-flex;
             align-items: center;
             gap: 3px;
-            margin-left: 4px;
             vertical-align: middle;
         }
         .generating span {
             display: inline-block;
-            width: 6px;
-            height: 6px;
-            background: var(--term-green);
+            width: 5px;
+            height: 5px;
+            background: var(--term-cyan);
             border-radius: 50%;
             animation: wave 1.2s ease-in-out infinite;
         }
+        .generating > .timeline-header {
+            display: none;
+        }            
         .generating span:nth-child(1) { animation-delay: 0s; }
         .generating span:nth-child(2) { animation-delay: 0.15s; }
         .generating span:nth-child(3) { animation-delay: 0.3s; }
+        /* Generating content - minimal style when only spinner */
+        .timeline-content.generating-content {
+            background: transparent;
+            border: none;
+            padding: 2px 0;
+        }
         @keyframes wave {
             0%, 60%, 100% {
                 transform: scale(0.6);
@@ -1381,6 +1585,20 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
             100% { transform: translateX(60px); }
         }
         .hljs { background: transparent !important; }
+        .elapsed-time {
+            color: var(--term-dim);
+            font-size: 11px;
+            margin-left: 8px;
+            font-style: italic;
+        }
+        .elapsed-time.timeout-warning {
+            color: var(--term-yellow);
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
@@ -1416,8 +1634,13 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         </div>
         <div id="sessionList"></div>
     </div>
-    <div class="chat-container" id="chat">
-        <div class="line assistant">LocalAI ready. Type a command or ask a question.</div>
+    <div class="chat-container" id="chatContainer">
+        <div class="timeline" id="chat">
+            <div class="timeline-item assistant complete">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">LocalAI ready. Type a command or ask a question.</div>
+            </div>
+        </div>
     </div>
     <div class="bulk-actions" id="bulkActions">
         <span class="count"><span id="pendingCount">0</span> pending edit(s)</span>
@@ -1427,8 +1650,13 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
     <div class="context-chips" id="contextChips"></div>
     <div class="autocomplete-dropdown" id="autocomplete"></div>
     <div class="input-section">
-        <input type="text" id="input" placeholder="ask anything... (@ for context, / for commands)">
-        <button id="stopBtn" class="stop" style="display:none">[stop]</button>
+        <div class="input-wrapper">
+            <textarea id="input" rows="1" placeholder="Ask anything... (@ for context, / for commands)&#10;Shift+Enter for new line"></textarea>
+            <div class="input-actions">
+                <button id="stopBtn" class="stop" style="display:none" title="Stop generation">■</button>
+                <button id="sendBtn" class="send" title="Send (Enter)">↵</button>
+            </div>
+        </div>
     </div>
     <script>
         const vscode = acquireVsCodeApi();
@@ -1459,6 +1687,10 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         let autocompleteItems = [];
         let projectFiles = [];
         let toolsSupported = false;
+        let responseStartTime = null;
+        let elapsedTimeInterval = null;
+        let timeoutWarningShown = false;
+        const RESPONSE_TIMEOUT = 60000; // 60 saniye
 
         // Tool support'u gösteren modeller (bilinen tool-capable modeller)
         const toolCapableModels = [
@@ -1540,6 +1772,15 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
             vscode.postMessage({ command: 'stopGeneration' });
         };
 
+        const sendBtn = document.getElementById('sendBtn');
+        sendBtn.onclick = () => send();
+
+        // Auto-resize textarea
+        function autoResizeTextarea() {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+        }
+
         input.onkeydown = (e) => {
             if (autocomplete.classList.contains('show')) {
                 if (e.key === 'ArrowDown') {
@@ -1558,10 +1799,15 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                 }
                 return;
             }
-            if (e.key === 'Enter') { e.preventDefault(); send(); }
+            // Enter = send, Shift+Enter = new line
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+            }
         };
 
         input.oninput = () => {
+            autoResizeTextarea();
             const text = input.value;
             const cursorPos = input.selectionStart;
 
@@ -1815,6 +2061,7 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                 context: contextData
             });
             input.value = '';
+            input.style.height = 'auto'; // Reset textarea height
 
             // Clear context after sending
             contextItems = [];
@@ -1822,12 +2069,120 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         }
 
         function addLine(cls, content, isHtml) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            // User ve assistant mesajları için timeline item
+            if (cls === 'user' || cls === 'assistant') {
+                const item = document.createElement('div');
+                item.className = 'timeline-item ' + cls + (cls === 'user' ? '' : ' complete');
+
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+
+                const header = document.createElement('div');
+                header.className = 'timeline-header';
+
+                const sender = document.createElement('span');
+                sender.className = 'timeline-sender';
+                sender.textContent = cls === 'user' ? 'You' : 'LocalAI';
+
+                const time = document.createElement('span');
+                time.className = 'timeline-time';
+                time.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                header.appendChild(sender);
+                header.appendChild(time);
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'timeline-content';
+                if (isHtml) contentDiv.innerHTML = content;
+                else contentDiv.textContent = content;
+
+                item.appendChild(dot);
+                item.appendChild(header);
+                item.appendChild(contentDiv);
+                chat.appendChild(item);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                return contentDiv;
+            }
+
+            // Error mesajları için
+            if (cls === 'error') {
+                const item = document.createElement('div');
+                item.className = 'timeline-item error';
+
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+
+                const header = document.createElement('div');
+                header.className = 'timeline-header';
+
+                const sender = document.createElement('span');
+                sender.className = 'timeline-sender';
+                sender.style.color = 'var(--term-red)';
+                sender.textContent = 'Error';
+
+                header.appendChild(sender);
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'timeline-content';
+                contentDiv.textContent = content;
+
+                item.appendChild(dot);
+                item.appendChild(header);
+                item.appendChild(contentDiv);
+                chat.appendChild(item);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                return contentDiv;
+            }
+
+            // Tool mesajları için compact timeline item
+            if (cls === 'tool') {
+                const item = document.createElement('div');
+                item.className = 'timeline-item tool';
+
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'timeline-content';
+                if (isHtml) contentDiv.innerHTML = content;
+                else contentDiv.textContent = content;
+
+                item.appendChild(dot);
+                item.appendChild(contentDiv);
+                chat.appendChild(item);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                return contentDiv;
+            }
+
+            // Thinking/agent-thinking için
+            if (cls === 'agent-thinking') {
+                const item = document.createElement('div');
+                item.className = 'timeline-item thinking';
+
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'timeline-content';
+                if (isHtml) contentDiv.innerHTML = content;
+                else contentDiv.textContent = content;
+
+                item.appendChild(dot);
+                item.appendChild(contentDiv);
+                chat.appendChild(item);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                return contentDiv;
+            }
+
+            // Fallback - eski stil
             const div = document.createElement('div');
             div.className = 'line ' + cls;
             if (isHtml) div.innerHTML = content;
             else div.textContent = content;
             chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
             return div;
         }
 
@@ -1897,32 +2252,115 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                 case 'startResponse':
                     isResponding = true;
                     stopBtn.style.display = 'inline';
+                    responseStartTime = Date.now();
+                    timeoutWarningShown = false;
+
+                    var chatContainer = document.getElementById('chatContainer');
+
+                    // Create timeline item for assistant response
+                    var timelineItem = document.createElement('div');
+                    timelineItem.className = 'timeline-item assistant generating';
+                    timelineItem.id = 'current-response';
+
+                    var dot = document.createElement('div');
+                    dot.className = 'timeline-dot';
+
+                    var header = document.createElement('div');
+                    header.className = 'timeline-header';
+
+                    var sender = document.createElement('span');
+                    sender.className = 'timeline-sender';
+                    sender.textContent = 'LocalAI';
+
+                    var timeSpan = document.createElement('span');
+                    timeSpan.className = 'timeline-time';
+                    timeSpan.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                    var elapsedSpan = document.createElement('span');
+                    elapsedSpan.className = 'elapsed-time';
+                    elapsedSpan.textContent = '0s';
+
+                    header.appendChild(sender);
+                    header.appendChild(timeSpan);
+                    header.appendChild(elapsedSpan);
+
                     currentLine = document.createElement('div');
-                    currentLine.className = 'line assistant';
+                    currentLine.className = 'timeline-content generating-content';
                     currentLine._raw = '';
-                    currentLine.innerHTML = '<span class="generating"><span></span><span></span><span></span></span><span class="generating-bar"></span>';
-                    chat.appendChild(currentLine);
-                    chat.scrollTop = chat.scrollHeight;
+                    currentLine.innerHTML = '';
+
+                    timelineItem.appendChild(dot);
+                    timelineItem.appendChild(header);
+                    timelineItem.appendChild(currentLine);
+                    chat.appendChild(timelineItem);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                    // Elapsed time sayacını başlat
+                    if (elapsedTimeInterval) clearInterval(elapsedTimeInterval);
+                    elapsedTimeInterval = setInterval(() => {
+                        if (!isResponding || !currentLine) {
+                            clearInterval(elapsedTimeInterval);
+                            return;
+                        }
+                        const elapsed = Math.floor((Date.now() - responseStartTime) / 1000);
+                        const elapsedEl = timelineItem.querySelector('.elapsed-time');
+                        if (elapsedEl) {
+                            elapsedEl.textContent = elapsed + 's';
+                            // Timeout uyarısı
+                            if (elapsed >= 60 && !timeoutWarningShown) {
+                                timeoutWarningShown = true;
+                                elapsedEl.classList.add('timeout-warning');
+                                elapsedEl.textContent = elapsed + 's - gecikiyor';
+                            }
+                        }
+                    }, 1000);
                     break;
                 case 'appendToken':
                     if (currentLine) {
+                        // İlk token geldiğinde generating-content class'ını kaldır
+                        if (currentLine.classList.contains('generating-content')) {
+                            currentLine.classList.remove('generating-content');
+                        }
                         currentLine._raw += msg.token;
                         currentLine.innerHTML = renderMd(currentLine._raw) + '<span class="generating"><span></span><span></span><span></span></span>';
-                        chat.scrollTop = chat.scrollHeight;
+                        var chatCont = document.getElementById('chatContainer');
+                        if (chatCont) chatCont.scrollTop = chatCont.scrollHeight;
                     }
                     break;
                 case 'endResponse':
+                    // Elapsed time sayacını durdur
+                    if (elapsedTimeInterval) {
+                        clearInterval(elapsedTimeInterval);
+                        elapsedTimeInterval = null;
+                    }
+                    var responseContainer = document.getElementById('current-response');
                     if (currentLine) {
                         if (currentLine._raw && currentLine._raw.trim()) {
                             currentLine.innerHTML = renderMd(currentLine._raw);
                             highlightCode();
+                            // Mark as complete and remove elapsed time
+                            if (responseContainer) {
+                                responseContainer.classList.remove('generating');
+                                responseContainer.classList.add('complete');
+                                var elapsedEl = responseContainer.querySelector('.elapsed-time');
+                                if (elapsedEl) elapsedEl.remove();
+                            }
                         } else {
-                            currentLine.remove();
+                            // Remove empty message container
+                            if (responseContainer) {
+                                responseContainer.remove();
+                            } else if (currentLine.parentElement) {
+                                currentLine.parentElement.remove();
+                            }
                         }
+                    }
+                    if (responseContainer) {
+                        responseContainer.removeAttribute('id');
                     }
                     isResponding = false;
                     stopBtn.style.display = 'none';
                     currentLine = null;
+                    responseStartTime = null;
                     break;
                 case 'agentThinking':
                     // Agent'ın düşüncelerini göster
@@ -2021,9 +2459,25 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                     }
                     break;
                 case 'error':
+                    // Stop elapsed time interval
+                    if (elapsedTimeInterval) {
+                        clearInterval(elapsedTimeInterval);
+                        elapsedTimeInterval = null;
+                    }
+                    // Remove generating state from current response
+                    var errorResponseContainer = document.getElementById('current-response');
+                    if (errorResponseContainer) {
+                        errorResponseContainer.classList.remove('generating');
+                        // Remove the empty generating content if exists
+                        if (currentLine && (!currentLine._raw || !currentLine._raw.trim())) {
+                            errorResponseContainer.remove();
+                        }
+                    }
                     isResponding = false;
                     stopBtn.style.display = 'none';
                     fetchBtn.disabled = false;
+                    currentLine = null;
+                    responseStartTime = null;
                     addLine('error', msg.text);
                     break;
                 case 'sessionList':
