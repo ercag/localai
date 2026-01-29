@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import { ChatPanel } from './chatPanel';
-import { ChatViewProvider } from './chatViewProvider';
 import { MemoryService } from './memory';
 import { getPendingEditForFile, applyPendingEdit, rejectPendingEdit, onPendingEditsChanged, getPendingEditsCount, getAllPendingEdits } from './tools';
 
 // Status bar item for showing generation status
 let statusBarItem: vscode.StatusBarItem;
+
+// Memory service (shared with ChatPanel)
+let memoryService: MemoryService;
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('LocalAI extension is now active!');
@@ -16,20 +18,11 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(statusBarItem);
 
 	// Initialize memory service
-	const memoryService = new MemoryService(context);
+	memoryService = new MemoryService(context);
 
-	// Sidebar view
-	const chatViewProvider = new ChatViewProvider(context.extensionUri, memoryService);
-	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider(
-			ChatViewProvider.viewType,
-			chatViewProvider
-		)
-	);
-
-	// Command to open in editor panel
+	// Command to open chat in editor panel
 	const openChatCommand = vscode.commands.registerCommand('localai.openChat', () => {
-		ChatPanel.createOrShow(context.extensionUri);
+		ChatPanel.createOrShow(context.extensionUri, memoryService);
 	});
 
 	// Apply edit command (for diff editor toolbar)
@@ -101,8 +94,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Stop generation command (for status bar click)
 	const stopGenerationCommand = vscode.commands.registerCommand('localai.stopGeneration', () => {
-		// ChatViewProvider'a stop mesajı gönder
-		chatViewProvider.stopGeneration();
+		// ChatPanel'a stop mesajı gönder
+		if (ChatPanel.currentPanel) {
+			ChatPanel.currentPanel.stopGeneration();
+		}
 	});
 
 	context.subscriptions.push(openChatCommand, applyEditCommand, rejectEditCommand, stopGenerationCommand);

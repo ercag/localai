@@ -17,7 +17,7 @@
       {
         "command": "localai.openChat",
         "title": "LocalAI: Open Chat",
-        "icon": "$(comment-discussion)"
+        "icon": "$(hubot)"
       },
       {
         "command": "localai.applyEdit",
@@ -35,6 +35,10 @@
     "menus": {
       "editor/title": [
         {
+          "command": "localai.openChat",
+          "group": "navigation@99"
+        },
+        {
           "command": "localai.applyEdit",
           "when": "localai.hasPendingEdit",
           "group": "navigation@1"
@@ -43,24 +47,6 @@
           "command": "localai.rejectEdit",
           "when": "localai.hasPendingEdit",
           "group": "navigation@2"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "localai",
-          "title": "LocalAI",
-          "icon": "$(hubot)"
-        }
-      ]
-    },
-    "views": {
-      "localai": [
-        {
-          "type": "webview",
-          "id": "localai.chatView",
-          "name": "Chat"
         }
       ]
     },

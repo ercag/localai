@@ -2267,6 +2267,7 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
 
                     var header = document.createElement('div');
                     header.className = 'timeline-header';
+                    header.style.display = 'none'; // Hidden until text arrives
 
                     var sender = document.createElement('span');
                     sender.className = 'timeline-sender';
@@ -2317,9 +2318,14 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                     break;
                 case 'appendToken':
                     if (currentLine) {
-                        // İlk token geldiğinde generating-content class'ını kaldır
+                        // İlk token geldiğinde header'ı göster ve generating-content class'ını kaldır
                         if (currentLine.classList.contains('generating-content')) {
                             currentLine.classList.remove('generating-content');
+                            var respContainer = document.getElementById('current-response');
+                            if (respContainer) {
+                                var hdr = respContainer.querySelector('.timeline-header');
+                                if (hdr) hdr.style.display = 'flex';
+                            }
                         }
                         currentLine._raw += msg.token;
                         currentLine.innerHTML = renderMd(currentLine._raw) + '<span class="generating"><span></span><span></span><span></span></span>';
