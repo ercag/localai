@@ -1,14 +1,28 @@
 import * as vscode from 'vscode';
-import { OllamaService, OllamaMessage } from './ollama';
+import { OllamaService, OllamaMessage, ToolCall, OllamaTool } from './ollama';
+import { VllmService } from './vllmService';
 import { getOllamaTools, getSystemPrompt, executeTool, applyPendingEdit, rejectPendingEdit, applyAllPendingEdits, rejectAllPendingEdits, getPendingEditsCount, onPendingEditsChanged } from './tools';
 import { MemoryService, ChatSession } from './memory';
 import { showGeneratingStatus, updateGeneratingStatus, hideGeneratingStatus, showReadyStatus } from './extension';
+
+export type ProviderType = 'ollama' | 'vllm';
+
+interface AIProvider {
+    chatWithTools(model: string, messages: OllamaMessage[], tools: OllamaTool[], onToken?: (token: string) => void, signal?: AbortSignal): Promise<{ content: string; toolCalls: ToolCall[] }>;
+    chat(model: string, messages: OllamaMessage[], onToken?: (token: string) => void): Promise<string>;
+    listModels(): Promise<string[]>;
+    isAvailable(): Promise<boolean>;
+    setBaseUrl(url: string): void;
+    getCurrentUrl(): string;
+}
 
 export class ChatPanel {
     public static currentPanel: ChatPanel | undefined;
     private readonly panel: vscode.WebviewPanel;
     private readonly extensionUri: vscode.Uri;
     private readonly ollama: OllamaService;
+    private readonly vllm: VllmService;
+    private currentProvider: ProviderType = 'ollama';
     private messages: OllamaMessage[] = [];
     private agentModel: string = '';
     private coderModel: string = '';
@@ -24,6 +38,7 @@ export class ChatPanel {
         this.panel = panel;
         this.extensionUri = extensionUri;
         this.ollama = new OllamaService();
+        this.vllm = new VllmService();
         this.memory = memoryService;
 
         this.panel.webview.html = this.getHtmlContent();
@@ -51,11 +66,20 @@ export class ChatPanel {
                     case 'selectCoderModel':
                         this.coderModel = message.model;
                         break;
+                    case 'selectProvider':
+                       this.currentProvider = message.provider as ProviderType;
+                        // Reset models so sendModelList() will pick correct defaults for new provider
+                        this.agentModel = '';
+                        this.coderModel = '';
+
+                        console.log('[LocalAI] Provider changed to:', this.currentProvider);
+                        await this.sendModelList();
+                        break;
                     case 'getModels':
                         await this.sendModelList();
                         break;
                     case 'updateApiUrl':
-                        this.ollama.setBaseUrl(message.url);
+                        this.getActiveProvider().setBaseUrl(message.url);
                         await this.sendModelList();
                         break;
                     case 'clearChat':
@@ -310,9 +334,14 @@ export class ChatPanel {
         }
     }
 
+    private getActiveProvider(): AIProvider {
+        return this.currentProvider === 'vllm' ? this.vllm : this.ollama;
+    }
+
     private async sendModelList(): Promise<void> {
+        const provider = this.getActiveProvider();
         try {
-            const models = await this.ollama.listModels();
+            const models = await provider.listModels();
             const toolCapable = ['llama3.1', 'llama3.2', 'llama3.3', 'mistral'];
             if (models.length > 0 && !this.agentModel) {
                 this.agentModel = models.find(m => toolCapable.some(tc => m.toLowerCase().includes(tc))) || models[0];
@@ -321,12 +350,15 @@ export class ChatPanel {
                 this.coderModel = models.find(m => m.toLowerCase().includes('coder') || m.toLowerCase().includes('qwen')) || '';
             }
             this.panel.webview.postMessage({
-                command: 'modelList', models, agentModel: this.agentModel, coderModel: this.coderModel
+                command: 'modelList', models, agentModel: this.agentModel, coderModel: this.coderModel, provider: this.currentProvider
             });
         } catch (error) {
+            const errorText = this.currentProvider === 'ollama'
+                ? 'Ollama bağlantısı kurulamadı. ollama serve çalışıyor mu?'
+                : 'vLLM bağlantısı kurulamadı. Server çalışıyor mu?';
             this.panel.webview.postMessage({
                 command: 'error',
-                text: 'Ollama bağlantısı kurulamadı. ollama serve çalışıyor mu?'
+                text: errorText
             });
         }
     }
@@ -394,8 +426,9 @@ export class ChatPanel {
                 ];
 
                 const tools = getOllamaTools();
+                const provider = this.getActiveProvider();
 
-                const { content, toolCalls } = await this.ollama.chatWithTools(
+                const { content, toolCalls } = await provider.chatWithTools(
                     activeAgentModel,
                     messagesWithSystem,
                     tools,
@@ -499,7 +532,7 @@ export class ChatPanel {
             : `Generate code for: ${lastUserMessage}\nFile: ${params.path}\nProvide ONLY the file content.`;
 
         try {
-            const codeResult = await this.ollama.chatWithTools(
+            const codeResult = await this.getActiveProvider().chatWithTools(
                 this.coderModel,
                 [{ role: 'user', content: coderPrompt }],
                 [],
@@ -801,7 +834,11 @@ export class ChatPanel {
 </head>
 <body>
     <div class="header">
-        <input type="text" id="apiUrl" value="http://localhost:11434" placeholder="Ollama URL">
+        <select id="providerSelect" title="AI Provider">
+            <option value="ollama">Ollama</option>
+            <option value="vllm">vLLM</option>
+        </select>
+        <input type="text" id="apiUrl" value="http://localhost:11434" placeholder="API URL">
         <button id="fetchBtn">Fetch</button>
         <button id="newBtn">New</button>
         <button id="historyBtn">History</button>
@@ -845,6 +882,7 @@ export class ChatPanel {
         const sendBtn = document.getElementById('sendBtn');
         const agentModel = document.getElementById('agentModel');
         const coderModel = document.getElementById('coderModel');
+        const providerSelect = document.getElementById('providerSelect');
         const apiUrl = document.getElementById('apiUrl');
         const fetchBtn = document.getElementById('fetchBtn');
         const newBtn = document.getElementById('newBtn');
@@ -853,6 +891,18 @@ export class ChatPanel {
 
         let currentLine = null;
         let isResponding = false;
+
+        providerSelect.onchange = () => {
+            const provider = providerSelect.value;
+            if (provider === 'ollama') {
+                apiUrl.value = 'http://localhost:11434';
+            } else if (provider === 'vllm') {
+                apiUrl.value = 'http://localhost:8000';
+            }
+            agentModel.innerHTML = '<option value="">loading...</option>';
+            coderModel.innerHTML = '<option value="">loading...</option>';
+            vscode.postMessage({ command: 'selectProvider', provider: provider });
+        };
 
         fetchBtn.onclick = () => vscode.postMessage({ command: 'updateApiUrl', url: apiUrl.value.trim() });
         newBtn.onclick = () => {

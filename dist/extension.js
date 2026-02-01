@@ -1,1 +1,3071 @@
-(()=>{"use strict";var e={97(e,t){Object.defineProperty(t,"__esModule",{value:!0}),t.MemoryService=void 0;const n="localai.chatHistory",o="localai.currentSession",i="localai.projectMemory";t.MemoryService=class{context;currentSession=null;constructor(e){this.context=e}async createNewSession(e){const t={id:`session_${Date.now()}_${Math.random().toString(36).substr(2,9)}`,title:"New Chat",messages:[],model:e,createdAt:Date.now(),updatedAt:Date.now()};return this.currentSession=t,await this.saveCurrentSessionId(t.id),t}getCurrentSession(){return this.currentSession}async loadCurrentSession(){const e=this.context.workspaceState.get(o);if(!e)return null;const t=(await this.getAllSessions()).find(t=>t.id===e);return t&&(this.currentSession=t),t||null}async saveSession(e){if(e.updatedAt=Date.now(),"New Chat"===e.title&&e.messages.length>0){const t=e.messages.find(e=>"user"===e.role);t&&(e.title=t.content.substring(0,40)+(t.content.length>40?"...":""))}const t=await this.getAllSessions(),o=t.findIndex(t=>t.id===e.id);o>=0?t[o]=e:t.unshift(e);const i=t.slice(0,50);await this.context.workspaceState.update(n,i),this.currentSession=e}async getAllSessions(){return this.context.workspaceState.get(n)||[]}async deleteSession(e){const t=(await this.getAllSessions()).filter(t=>t.id!==e);await this.context.workspaceState.update(n,t),this.currentSession?.id===e&&(this.currentSession=null,await this.context.workspaceState.update(o,void 0))}async clearAllSessions(){await this.context.workspaceState.update(n,[]),await this.context.workspaceState.update(o,void 0),this.currentSession=null}async saveCurrentSessionId(e){await this.context.workspaceState.update(o,e)}async addMessage(e){this.currentSession&&(this.currentSession.messages.push(e),await this.saveSession(this.currentSession))}async getMessages(){return this.currentSession?.messages||[]}async clearCurrentMessages(){this.currentSession&&(this.currentSession.messages=[],await this.saveSession(this.currentSession))}async getProjectMemory(){const e=this.context.workspaceState.get(i);return e?{knownFiles:new Map(Object.entries(e.knownFiles||{})),projectNotes:e.projectNotes||"",commonCommands:e.commonCommands||[],updatedAt:e.updatedAt||Date.now()}:null}async saveProjectMemory(e){const t={knownFiles:Object.fromEntries(e.knownFiles),projectNotes:e.projectNotes,commonCommands:e.commonCommands,updatedAt:Date.now()};await this.context.workspaceState.update(i,t)}async addFileNote(e,t){let n=await this.getProjectMemory();n||(n={knownFiles:new Map,projectNotes:"",commonCommands:[],updatedAt:Date.now()}),n.knownFiles.set(e,t),await this.saveProjectMemory(n)}async setProjectNotes(e){let t=await this.getProjectMemory();t||(t={knownFiles:new Map,projectNotes:"",commonCommands:[],updatedAt:Date.now()}),t.projectNotes=e,await this.saveProjectMemory(t)}async addCommonCommand(e){let t=await this.getProjectMemory();t||(t={knownFiles:new Map,projectNotes:"",commonCommands:[],updatedAt:Date.now()}),t.commonCommands.includes(e)||(t.commonCommands.unshift(e),t.commonCommands=t.commonCommands.slice(0,20),await this.saveProjectMemory(t))}async getContextSummary(){const e=await this.getProjectMemory();if(!e)return"";const t=[];if(e.projectNotes&&t.push(`## Project Notes\n${e.projectNotes}`),e.knownFiles.size>0){const n=Array.from(e.knownFiles.entries()).map(([e,t])=>`- ${e}: ${t}`).join("\n");t.push(`## Known Files\n${n}`)}return e.commonCommands.length>0&&t.push(`## Common Commands\n${e.commonCommands.join(", ")}`),t.length>0?t.join("\n\n"):""}async exportHistory(){const e=await this.getAllSessions(),t=await this.getProjectMemory(),n={exportedAt:(new Date).toISOString(),sessions:e,projectMemory:t?{knownFiles:Object.fromEntries(t.knownFiles),projectNotes:t.projectNotes,commonCommands:t.commonCommands}:null};return JSON.stringify(n,null,2)}async importHistory(e){try{const t=JSON.parse(e);if(t.sessions&&Array.isArray(t.sessions)&&await this.context.workspaceState.update(n,t.sessions),t.projectMemory){const e={knownFiles:new Map(Object.entries(t.projectMemory.knownFiles||{})),projectNotes:t.projectMemory.projectNotes||"",commonCommands:t.projectMemory.commonCommands||[],updatedAt:Date.now()};await this.saveProjectMemory(e)}return{sessions:t.sessions?.length||0,success:!0}}catch{return{sessions:0,success:!1}}}}},265(e,t,n){var o,i=this&&this.__createBinding||(Object.create?function(e,t,n,o){void 0===o&&(o=n);var i=Object.getOwnPropertyDescriptor(t,n);i&&!("get"in i?!t.__esModule:i.writable||i.configurable)||(i={enumerable:!0,get:function(){return t[n]}}),Object.defineProperty(e,o,i)}:function(e,t,n,o){void 0===o&&(o=n),e[o]=t[n]}),s=this&&this.__setModuleDefault||(Object.create?function(e,t){Object.defineProperty(e,"default",{enumerable:!0,value:t})}:function(e,t){e.default=t}),r=this&&this.__importStar||(o=function(e){return o=Object.getOwnPropertyNames||function(e){var t=[];for(var n in e)Object.prototype.hasOwnProperty.call(e,n)&&(t[t.length]=n);return t},o(e)},function(e){if(e&&e.__esModule)return e;var t={};if(null!=e)for(var n=o(e),r=0;r<n.length;r++)"default"!==n[r]&&i(t,e,n[r]);return s(t,e),t});Object.defineProperty(t,"__esModule",{value:!0}),t.activate=function(e){console.log("LocalAI extension is now active!"),p=a.window.createStatusBarItem(a.StatusBarAlignment.Left,100),p.name="LocalAI Status",e.subscriptions.push(p),u=new c.MemoryService(e);const t=a.commands.registerCommand("localai.openChat",()=>{l.ChatPanel.createOrShow(e.extensionUri,u)}),n=a.commands.registerCommand("localai.applyEdit",async()=>{const e=a.window.activeTextEditor;let t=e?(0,d.getPendingEditForFile)(e.document.uri.fsPath):void 0;if(!t){const e=(0,d.getAllPendingEdits)();e.length>0&&(t=e[e.length-1])}if(t){const e=await(0,d.applyPendingEdit)(t.id);a.window.showInformationMessage(e),i()}else a.window.showWarningMessage("No pending edit found")}),o=a.commands.registerCommand("localai.rejectEdit",async()=>{const e=a.window.activeTextEditor;let t=e?(0,d.getPendingEditForFile)(e.document.uri.fsPath):void 0;if(!t){const e=(0,d.getAllPendingEdits)();e.length>0&&(t=e[e.length-1])}if(t){const e=await(0,d.rejectPendingEdit)(t.id);a.window.showInformationMessage(e),i()}else a.window.showWarningMessage("No pending edit found")});function i(){const e=(0,d.getPendingEditsCount)()>0;a.commands.executeCommand("setContext","localai.hasPendingEdit",e)}e.subscriptions.push(a.window.onDidChangeActiveTextEditor(()=>{i()})),e.subscriptions.push((0,d.onPendingEditsChanged)(()=>{i()}));const s=a.commands.registerCommand("localai.stopGeneration",()=>{l.ChatPanel.currentPanel&&l.ChatPanel.currentPanel.stopGeneration()});e.subscriptions.push(t,n,o,s)},t.deactivate=function(){l.ChatPanel.currentPanel&&l.ChatPanel.currentPanel.dispose()},t.showGeneratingStatus=function(e){p&&(p.text="$(sync~spin) LocalAI: Generating...",p.tooltip=`Model: ${e}\nClick to stop`,p.backgroundColor=new a.ThemeColor("statusBarItem.warningBackground"),p.command="localai.stopGeneration",p.show())},t.updateGeneratingStatus=function(e){p&&(p.text=`$(sync~spin) LocalAI: ${e}s`,e>=60&&(p.text=`$(warning) LocalAI: ${e}s - slow response`,p.backgroundColor=new a.ThemeColor("statusBarItem.errorBackground")))},t.hideGeneratingStatus=function(){p&&p.hide()},t.showReadyStatus=function(){p&&(p.text="$(check) LocalAI: Ready",p.tooltip="LocalAI is ready",p.backgroundColor=void 0,p.command=void 0,p.show(),setTimeout(()=>{"$(check) LocalAI: Ready"===p.text&&p.hide()},3e3))};const a=r(n(398)),l=n(368),c=n(97),d=n(623);let p,u},317(e){e.exports=require("child_process")},368(e,t,n){var o,i=this&&this.__createBinding||(Object.create?function(e,t,n,o){void 0===o&&(o=n);var i=Object.getOwnPropertyDescriptor(t,n);i&&!("get"in i?!t.__esModule:i.writable||i.configurable)||(i={enumerable:!0,get:function(){return t[n]}}),Object.defineProperty(e,o,i)}:function(e,t,n,o){void 0===o&&(o=n),e[o]=t[n]}),s=this&&this.__setModuleDefault||(Object.create?function(e,t){Object.defineProperty(e,"default",{enumerable:!0,value:t})}:function(e,t){e.default=t}),r=this&&this.__importStar||(o=function(e){return o=Object.getOwnPropertyNames||function(e){var t=[];for(var n in e)Object.prototype.hasOwnProperty.call(e,n)&&(t[t.length]=n);return t},o(e)},function(e){if(e&&e.__esModule)return e;var t={};if(null!=e)for(var n=o(e),r=0;r<n.length;r++)"default"!==n[r]&&i(t,e,n[r]);return s(t,e),t});Object.defineProperty(t,"__esModule",{value:!0}),t.ChatPanel=void 0;const a=r(n(398)),l=n(448),c=n(623),d=n(265);class p{static currentPanel;panel;extensionUri;ollama;messages=[];agentModel="";coderModel="";abortController=null;memory;currentSession=null;waitingForApproval=!1;lastPendingCount=0;autoApproveMode=!1;disposables=[];constructor(e,t,n){this.panel=e,this.extensionUri=t,this.ollama=new l.OllamaService,this.memory=n,this.panel.webview.html=this.getHtmlContent(),(0,c.onPendingEditsChanged)(()=>{const e=(0,c.getPendingEditsCount)();this.waitingForApproval&&e<this.lastPendingCount&&(this.waitingForApproval=!1,this.continueAfterApproval()),this.lastPendingCount=e,this.updatePendingEditsCount()}),this.panel.webview.onDidReceiveMessage(async e=>{switch(e.command){case"sendMessage":await this.handleUserMessage(e.text,e.context);break;case"selectAgentModel":this.agentModel=e.model;break;case"selectCoderModel":this.coderModel=e.model;break;case"getModels":await this.sendModelList();break;case"updateApiUrl":this.ollama.setBaseUrl(e.url),await this.sendModelList();break;case"clearChat":this.messages=[],await this.memory.clearCurrentMessages();break;case"newSession":this.messages=[],this.currentSession=await this.memory.createNewSession(this.agentModel);break;case"loadSession":await this.loadSession(e.sessionId);break;case"getSessions":await this.sendSessionList();break;case"deleteSession":await this.memory.deleteSession(e.sessionId),await this.sendSessionList();break;case"stopGeneration":this.stopGeneration();break;case"ready":await this.sendModelList(),await this.initSession(),await this.sendSessionList(),this.currentSession&&this.messages.length>0&&this.panel.webview.postMessage({command:"loadedSession",session:{id:this.currentSession.id,title:this.currentSession.title,model:this.currentSession.model,messageCount:this.messages.length},messages:this.messages.filter(e=>"user"===e.role||"assistant"===e.role)});break;case"approveEdit":const t=await(0,c.applyPendingEdit)(e.editId);this.panel.webview.postMessage({command:"editResult",editId:e.editId,result:t,approved:!0}),this.updatePendingEditsCount(),t.includes("✓")&&this.waitingForApproval&&(this.waitingForApproval=!1,await this.continueAfterApproval());break;case"rejectEdit":const n=await(0,c.rejectPendingEdit)(e.editId);this.panel.webview.postMessage({command:"editResult",editId:e.editId,result:n,approved:!1}),this.updatePendingEditsCount();break;case"approveAllEdits":const o=await(0,c.applyAllPendingEdits)();this.panel.webview.postMessage({command:"bulkEditResult",result:o,approved:!0}),this.updatePendingEditsCount();break;case"rejectAllEdits":const i=(0,c.rejectAllPendingEdits)();this.panel.webview.postMessage({command:"bulkEditResult",result:i,approved:!1}),this.updatePendingEditsCount();break;case"setAutoApprove":this.autoApproveMode=e.enabled,this.autoApproveMode&&this.waitingForApproval&&(await(0,c.applyAllPendingEdits)(),this.waitingForApproval=!1,this.updatePendingEditsCount(),await this.continueAfterApproval());break;case"getContext":await this.handleGetContext(e.type,e.value);break;case"openFile":this.openFile(e.path,e.line)}},null,this.disposables),this.panel.onDidDispose(()=>this.dispose(),null,this.disposables)}static createOrShow(e,t){const n=a.ViewColumn.Beside;if(p.currentPanel)return p.currentPanel.panel.reveal(n),p.currentPanel;const o=a.window.createWebviewPanel("localaiChat","LocalAI",n,{enableScripts:!0,retainContextWhenHidden:!0,localResourceRoots:[e]});return p.currentPanel=new p(o,e,t),p.currentPanel}stopGeneration(){this.abortController&&(this.abortController.abort(),this.abortController=null),this.waitingForApproval=!1,(0,d.hideGeneratingStatus)(),this.panel.webview.postMessage({command:"endResponse"})}async initSession(){const e=await this.memory.loadCurrentSession();e?(this.currentSession=e,this.messages=e.messages,this.agentModel=e.model):this.currentSession=await this.memory.createNewSession(this.agentModel)}async loadSession(e){const t=(await this.memory.getAllSessions()).find(t=>t.id===e);t&&(this.currentSession=t,this.messages=t.messages,this.agentModel=t.model,this.panel.webview.postMessage({command:"loadedSession",session:{id:t.id,title:t.title,model:t.model,messageCount:t.messages.length},messages:t.messages.filter(e=>"user"===e.role||"assistant"===e.role)}))}async sendSessionList(){const e=await this.memory.getAllSessions();this.panel.webview.postMessage({command:"sessionList",sessions:e.map(e=>({id:e.id,title:e.title,model:e.model,messageCount:e.messages.length,updatedAt:e.updatedAt})),currentSessionId:this.currentSession?.id})}async saveCurrentSession(){this.currentSession&&(this.currentSession.messages=this.messages,this.currentSession.model=this.agentModel,await this.memory.saveSession(this.currentSession))}updatePendingEditsCount(){this.panel.webview.postMessage({command:"pendingEditsCount",count:(0,c.getPendingEditsCount)()})}async handleGetContext(e,t){let o="";const i=a.workspace.workspaceFolders?.[0]?.uri.fsPath;try{if("special"===e){if("@selection"===t){const e=a.window.activeTextEditor;e&&(o=e.document.getText(e.selection)||"(No text selected)")}else if("@file"===t){const e=a.window.activeTextEditor;e&&(o=`File: ${e.document.fileName}\n${"─".repeat(40)}\n${e.document.getText()}`)}else if("@errors"===t){const e=a.window.activeTextEditor;if(e){const t=a.languages.getDiagnostics(e.document.uri);o=t.length>0?t.map(e=>`Line ${e.range.start.line+1}: [${0===e.severity?"Error":"Warning"}] ${e.message}`).join("\n"):"(No errors in current file)"}}}else if("file"===e&&i){const e=t.replace("@file:",""),s=n(928).join(i,e),r=n(896);r.existsSync(s)&&(o=`File: ${e}\n${"─".repeat(40)}\n${r.readFileSync(s,"utf-8")}`)}}catch(e){o=`(Error: ${e instanceof Error?e.message:"Unknown"})`}this.panel.webview.postMessage({command:"contextData",value:t,content:o})}async openFile(e,t){const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return;const o=a.Uri.file(e.startsWith("/")||e.includes(":")?e:`${n}/${e}`);try{const e=await a.workspace.openTextDocument(o),n=await a.window.showTextDocument(e);if(t&&t>0){const e=new a.Position(t-1,0);n.selection=new a.Selection(e,e),n.revealRange(new a.Range(e,e),a.TextEditorRevealType.InCenter)}}catch{a.window.showErrorMessage(`Could not open file: ${e}`)}}async sendModelList(){try{const e=await this.ollama.listModels(),t=["llama3.1","llama3.2","llama3.3","mistral"];e.length>0&&!this.agentModel&&(this.agentModel=e.find(e=>t.some(t=>e.toLowerCase().includes(t)))||e[0]),e.length>0&&!this.coderModel&&(this.coderModel=e.find(e=>e.toLowerCase().includes("coder")||e.toLowerCase().includes("qwen"))||""),this.panel.webview.postMessage({command:"modelList",models:e,agentModel:this.agentModel,coderModel:this.coderModel})}catch(e){this.panel.webview.postMessage({command:"error",text:"Ollama bağlantısı kurulamadı. ollama serve çalışıyor mu?"})}}async handleUserMessage(e,t){let n=e;if(t&&t.length>0){const o=t.filter(e=>e.content).map(e=>`[${e.label}]\n${e.content}`);o.length>0&&(n=`Context:\n${o.join("\n\n")}\n\nUser request: ${e}`)}this.messages.push({role:"user",content:n}),await this.saveCurrentSession(),this.panel.webview.postMessage({command:"addMessage",role:"user",content:e}),this.panel.webview.postMessage({command:"startResponse"});try{await this.runAgentLoop()}catch(e){(0,d.hideGeneratingStatus)(),"AbortError"===e.name?this.panel.webview.postMessage({command:"appendToken",token:"\n\n*[Durduruldu]*"}):this.panel.webview.postMessage({command:"error",text:e instanceof Error?e.message:"Bilinmeyen hata"})}this.waitingForApproval||this.panel.webview.postMessage({command:"endResponse"})}async runAgentLoop(){let e=0,t=null;const n=Date.now();this.abortController=new AbortController;const o=this.agentModel||this.coderModel;if(!o)throw new Error("Lütfen en az bir model seçin");(0,d.showGeneratingStatus)(o),t=setInterval(()=>{(0,d.updateGeneratingStatus)(Math.floor((Date.now()-n)/1e3))},1e3);try{for(;e<10;){if(this.abortController?.signal.aborted)throw new DOMException("Aborted","AbortError");e++;const n=[{role:"system",content:(0,c.getSystemPrompt)()},...this.messages],i=(0,c.getOllamaTools)(),{content:s,toolCalls:r}=await this.ollama.chatWithTools(o,n,i,e=>{this.panel.webview.postMessage({command:"appendToken",token:e})},this.abortController.signal);if(!(r&&r.length>0)){this.messages.push({role:"assistant",content:s}),await this.saveCurrentSession();break}this.messages.push({role:"assistant",content:s,tool_calls:r}),this.panel.webview.postMessage({command:"endResponse"});for(const e of r){if(this.abortController?.signal.aborted)throw new DOMException("Aborted","AbortError");const n=e.function.name;let o=e.function.arguments;if(["write_file","edit_file"].includes(n)&&this.coderModel&&this.coderModel!==this.agentModel&&(!o.content||o.content.length<50)){this.panel.webview.postMessage({command:"startCodeGeneration",coderModel:this.coderModel});const e=await this.generateCodeWithCoderModel(n,o);e&&(o={...o,content:e}),this.panel.webview.postMessage({command:"endCodeGeneration"})}const i={...o};["write_file","edit_file"].includes(n)&&(i.content&&(i.content=`[${i.content.split("\n").length} satır]`),i.new_text&&(i.new_text=`[${i.new_text.split("\n").length} satır]`),i.old_text&&(i.old_text=`[${i.old_text.split("\n").length} satır]`)),this.panel.webview.postMessage({command:"toolCall",name:n,params:i});const s=await(0,c.executeTool)(n,o);let r=s;if("read_file"===n?r="✓ dosya okundu":"write_file"===n?r="✓ dosya yazıldı":"edit_file"===n&&(r="✓ dosya düzenlendi"),this.panel.webview.postMessage({command:"toolResult",name:n,result:r}),this.messages.push({role:"tool",content:s}),["write_file","edit_file"].includes(n)&&s.includes("PENDING_EDIT")){if(this.autoApproveMode){await(0,c.applyAllPendingEdits)(),this.updatePendingEditsCount(),this.panel.webview.postMessage({command:"toolResult",name:n,result:"✓ otomatik onaylandı"});continue}return this.waitingForApproval=!0,this.lastPendingCount=(0,c.getPendingEditsCount)(),this.messages.push({role:"assistant",content:"Değişiklikler diff editörde. Onaylayın veya reddedin."}),await this.saveCurrentSession(),t&&clearInterval(t),(0,d.hideGeneratingStatus)(),void this.panel.webview.postMessage({command:"endResponse"})}}this.panel.webview.postMessage({command:"startResponse"})}}finally{t&&clearInterval(t),(0,d.hideGeneratingStatus)(),(0,d.showReadyStatus)(),this.abortController=null}}async generateCodeWithCoderModel(e,t){if(!this.coderModel)return null;const n=this.messages.filter(e=>"user"===e.role),o=n[n.length-1]?.content||"",i="edit_file"===e?`Edit code based on: ${o}\nFile: ${t.path}\nOld text: ${t.old_text}\nProvide ONLY the new code.`:`Generate code for: ${o}\nFile: ${t.path}\nProvide ONLY the file content.`;try{let e=(await this.ollama.chatWithTools(this.coderModel,[{role:"user",content:i}],[],()=>{},this.abortController?.signal)).content.trim();const t=e.match(/```[\w]*\n([\s\S]*?)```/);return t&&(e=t[1].trim()),e}catch{return null}}async continueAfterApproval(){this.messages.push({role:"user",content:"[Değişiklikler onaylandı. Devam et.]"}),this.panel.webview.postMessage({command:"startResponse"});try{await this.runAgentLoop()}catch(e){e instanceof DOMException&&"AbortError"===e.name||this.panel.webview.postMessage({command:"error",text:e instanceof Error?e.message:"Hata"})}}getHtmlContent(){return"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>LocalAI</title>\n    <style>\n        :root {\n            --bg: #1e1e1e;\n            --bg-light: #252526;\n            --bg-lighter: #2d2d2d;\n            --border: #3c3c3c;\n            --text: #d4d4d4;\n            --text-dim: #808080;\n            --green: #4ec957;\n            --cyan: #56b6c2;\n            --yellow: #e5c07b;\n            --red: #e06c75;\n        }\n        * { box-sizing: border-box; margin: 0; padding: 0; }\n        body {\n            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n            background: var(--bg);\n            color: var(--text);\n            height: 100vh;\n            display: flex;\n            flex-direction: column;\n            font-size: 13px;\n        }\n        /* Header */\n        .header {\n            padding: 8px 12px;\n            background: var(--bg-light);\n            border-bottom: 1px solid var(--border);\n            display: flex;\n            gap: 8px;\n            align-items: center;\n            flex-wrap: wrap;\n        }\n        .header input, .header select {\n            background: var(--bg-lighter);\n            color: var(--text);\n            border: 1px solid var(--border);\n            padding: 4px 8px;\n            border-radius: 4px;\n            font-size: 12px;\n        }\n        .header input { flex: 1; min-width: 120px; }\n        .header select { min-width: 100px; }\n        .header button {\n            background: var(--bg-lighter);\n            color: var(--cyan);\n            border: 1px solid var(--border);\n            padding: 4px 12px;\n            border-radius: 4px;\n            cursor: pointer;\n            font-size: 12px;\n        }\n        .header button:hover { background: var(--border); }\n        .model-row {\n            display: flex;\n            gap: 8px;\n            align-items: center;\n            width: 100%;\n        }\n        .model-label { font-size: 10px; color: var(--cyan); font-weight: bold; }\n        /* Chat */\n        .chat-container {\n            flex: 1;\n            overflow-y: auto;\n            padding: 16px 16px 16px 24px;\n        }\n        .timeline {\n            border-left: 2px solid var(--border);\n            margin-left: 6px;\n            padding-left: 20px;\n        }\n        .timeline-item {\n            position: relative;\n            padding-bottom: 16px;\n        }\n        .timeline-item:last-child { padding-bottom: 24px; }\n        .timeline-dot {\n            position: absolute;\n            left: -27px;\n            top: 4px;\n            width: 10px;\n            height: 10px;\n            border-radius: 50%;\n            background: var(--bg);\n            border: 2px solid var(--text-dim);\n        }\n        .timeline-item.user .timeline-dot {\n            border-color: var(--green);\n            background: var(--green);\n        }\n        .timeline-item.assistant .timeline-dot {\n            border-color: var(--cyan);\n        }\n        .timeline-item.assistant.complete .timeline-dot {\n            background: var(--cyan);\n        }\n        .timeline-item.generating .timeline-dot {\n            background: var(--cyan);\n            animation: pulse 1s ease-in-out infinite;\n        }\n        @keyframes pulse {\n            0%, 100% { opacity: 1; }\n            50% { opacity: 0.3; }\n        }\n        .timeline-item.tool .timeline-dot {\n            width: 6px; height: 6px;\n            left: -25px; top: 6px;\n            border-color: var(--yellow);\n            background: var(--yellow);\n        }\n        .timeline-item.error .timeline-dot {\n            border-color: var(--red);\n            background: var(--red);\n        }\n        .timeline-header {\n            display: flex;\n            align-items: center;\n            gap: 8px;\n            margin-bottom: 4px;\n            font-size: 11px;\n        }\n        .timeline-sender { font-weight: 600; }\n        .timeline-item.user .timeline-sender { color: var(--green); }\n        .timeline-item.assistant .timeline-sender { color: var(--cyan); }\n        .timeline-time { color: var(--text-dim); font-size: 10px; }\n        .elapsed-time { color: var(--text-dim); font-size: 10px; }\n        .elapsed-time.warning { color: var(--yellow); }\n        .timeline-content {\n            background: var(--bg-light);\n            border: 1px solid var(--border);\n            border-radius: 6px;\n            padding: 10px 14px;\n            line-height: 1.5;\n            white-space: pre-wrap;\n            word-break: break-word;\n        }\n        .timeline-item.user .timeline-content {\n            background: #1a2e1a;\n            border-color: #2d4a2d;\n        }\n        .timeline-item.error .timeline-content {\n            background: #2e1a1a;\n            border-color: #4a2d2d;\n            color: var(--red);\n        }\n        .timeline-item.tool .timeline-content {\n            background: transparent;\n            border: none;\n            padding: 0;\n            font-size: 12px;\n            color: var(--text-dim);\n        }\n        .timeline-item.tool { padding-bottom: 8px; }\n        .generating-content {\n            background: transparent !important;\n            border: none !important;\n            padding: 0 !important;\n        }\n        .generating-dots {\n            display: inline-flex;\n            gap: 3px;\n        }\n        .generating-dots span {\n            width: 5px; height: 5px;\n            background: var(--cyan);\n            border-radius: 50%;\n            animation: wave 1.2s ease-in-out infinite;\n        }\n        .generating-dots span:nth-child(2) { animation-delay: 0.15s; }\n        .generating-dots span:nth-child(3) { animation-delay: 0.3s; }\n        @keyframes wave {\n            0%, 60%, 100% { transform: scale(0.6); opacity: 0.4; }\n            30% { transform: scale(1); opacity: 1; }\n        }\n        .tool-action { color: var(--cyan); }\n        /* Code */\n        pre {\n            background: var(--bg);\n            padding: 10px;\n            border-radius: 4px;\n            overflow-x: auto;\n            margin: 8px 0;\n        }\n        code {\n            font-family: 'Fira Code', Consolas, monospace;\n            font-size: 12px;\n        }\n        /* Input */\n        .input-section {\n            padding: 12px;\n            background: var(--bg);\n            border-top: 1px solid var(--border);\n        }\n        .input-wrapper {\n            display: flex;\n            background: var(--bg-lighter);\n            border: 1px solid var(--border);\n            border-radius: 8px;\n            padding: 8px 12px;\n            gap: 8px;\n            align-items: flex-end;\n        }\n        .input-wrapper:focus-within {\n            border-color: var(--cyan);\n        }\n        .input-section textarea {\n            flex: 1;\n            background: transparent;\n            color: var(--text);\n            border: none;\n            outline: none;\n            font-family: inherit;\n            font-size: 13px;\n            resize: none;\n            min-height: 24px;\n            max-height: 150px;\n        }\n        .input-actions {\n            display: flex;\n            gap: 4px;\n        }\n        .input-actions button {\n            background: transparent;\n            border: none;\n            padding: 4px 8px;\n            cursor: pointer;\n            border-radius: 4px;\n            font-size: 14px;\n        }\n        .input-actions button.stop { color: var(--red); }\n        .input-actions button.send { color: var(--green); }\n        .input-actions button:hover { background: var(--border); }\n        /* Auto-approve toggle */\n        .auto-approve-row {\n            display: flex;\n            align-items: center;\n            gap: 8px;\n            padding: 6px 12px;\n            background: var(--bg-light);\n            border-top: 1px solid var(--border);\n            font-size: 11px;\n        }\n        .auto-approve-row label {\n            display: flex;\n            align-items: center;\n            gap: 6px;\n            cursor: pointer;\n            color: var(--text-dim);\n        }\n        .auto-approve-row input[type=\"checkbox\"] {\n            width: 14px;\n            height: 14px;\n            cursor: pointer;\n        }\n        .auto-approve-row.active label {\n            color: var(--yellow);\n        }\n        .auto-approve-hint {\n            font-size: 10px;\n            color: var(--text-dim);\n            margin-left: auto;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <input type=\"text\" id=\"apiUrl\" value=\"http://localhost:11434\" placeholder=\"Ollama URL\">\n        <button id=\"fetchBtn\">Fetch</button>\n        <button id=\"newBtn\">New</button>\n        <button id=\"historyBtn\">History</button>\n    </div>\n    <div class=\"header model-row\">\n        <span class=\"model-label\">AGENT:</span>\n        <select id=\"agentModel\"><option>Loading...</option></select>\n        <span class=\"model-label\">CODER:</span>\n        <select id=\"coderModel\"><option>Optional</option></select>\n    </div>\n    <div class=\"chat-container\" id=\"chatContainer\">\n        <div class=\"timeline\" id=\"chat\">\n            <div class=\"timeline-item assistant complete\">\n                <div class=\"timeline-dot\"></div>\n                <div class=\"timeline-content\">LocalAI ready. How can I help?</div>\n            </div>\n        </div>\n    </div>\n    <div class=\"auto-approve-row\" id=\"autoApproveRow\">\n        <label>\n            <input type=\"checkbox\" id=\"autoApproveToggle\">\n            <span>Auto-approve edits</span>\n        </label>\n        <span class=\"auto-approve-hint\">Skip diff review for this session</span>\n    </div>\n    <div class=\"input-section\">\n        <div class=\"input-wrapper\">\n            <textarea id=\"input\" rows=\"1\" placeholder=\"Ask anything... (Shift+Enter for new line)\"></textarea>\n            <div class=\"input-actions\">\n                <button id=\"stopBtn\" class=\"stop\" style=\"display:none\">■</button>\n                <button id=\"sendBtn\" class=\"send\">↵</button>\n            </div>\n        </div>\n    </div>\n    <script>\n        const vscode = acquireVsCodeApi();\n        const chat = document.getElementById('chat');\n        const chatContainer = document.getElementById('chatContainer');\n        const input = document.getElementById('input');\n        const stopBtn = document.getElementById('stopBtn');\n        const sendBtn = document.getElementById('sendBtn');\n        const agentModel = document.getElementById('agentModel');\n        const coderModel = document.getElementById('coderModel');\n        const apiUrl = document.getElementById('apiUrl');\n        const fetchBtn = document.getElementById('fetchBtn');\n        const newBtn = document.getElementById('newBtn');\n        const autoApproveToggle = document.getElementById('autoApproveToggle');\n        const autoApproveRow = document.getElementById('autoApproveRow');\n\n        let currentLine = null;\n        let isResponding = false;\n\n        fetchBtn.onclick = () => vscode.postMessage({ command: 'updateApiUrl', url: apiUrl.value.trim() });\n        newBtn.onclick = () => {\n            vscode.postMessage({ command: 'newSession' });\n            chat.innerHTML = '<div class=\"timeline-item assistant complete\"><div class=\"timeline-dot\"></div><div class=\"timeline-content\">New session started.</div></div>';\n            // Reset auto-approve on new session\n            autoApproveToggle.checked = false;\n            autoApproveRow.classList.remove('active');\n            vscode.postMessage({ command: 'setAutoApprove', enabled: false });\n        };\n        autoApproveToggle.onchange = () => {\n            const enabled = autoApproveToggle.checked;\n            autoApproveRow.classList.toggle('active', enabled);\n            vscode.postMessage({ command: 'setAutoApprove', enabled });\n        };\n        stopBtn.onclick = () => vscode.postMessage({ command: 'stopGeneration' });\n        sendBtn.onclick = send;\n        agentModel.onchange = () => vscode.postMessage({ command: 'selectAgentModel', model: agentModel.value });\n        coderModel.onchange = () => vscode.postMessage({ command: 'selectCoderModel', model: coderModel.value });\n\n        input.onkeydown = (e) => {\n            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }\n        };\n        input.oninput = () => {\n            input.style.height = 'auto';\n            input.style.height = Math.min(input.scrollHeight, 150) + 'px';\n        };\n\n        function send() {\n            const text = input.value.trim();\n            if (!text || isResponding) return;\n            vscode.postMessage({ command: 'sendMessage', text });\n            input.value = '';\n            input.style.height = 'auto';\n        }\n\n        function addLine(cls, content, isHtml) {\n            const item = document.createElement('div');\n            item.className = 'timeline-item ' + cls + (cls === 'assistant' ? ' complete' : '');\n\n            const dot = document.createElement('div');\n            dot.className = 'timeline-dot';\n\n            if (cls === 'user' || cls === 'assistant' || cls === 'error') {\n                const header = document.createElement('div');\n                header.className = 'timeline-header';\n                const sender = document.createElement('span');\n                sender.className = 'timeline-sender';\n                sender.textContent = cls === 'user' ? 'You' : cls === 'error' ? 'Error' : 'LocalAI';\n                const time = document.createElement('span');\n                time.className = 'timeline-time';\n                time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});\n                header.appendChild(sender);\n                header.appendChild(time);\n                item.appendChild(dot);\n                item.appendChild(header);\n            } else {\n                item.appendChild(dot);\n            }\n\n            const contentDiv = document.createElement('div');\n            contentDiv.className = 'timeline-content';\n            if (isHtml) contentDiv.innerHTML = content;\n            else contentDiv.textContent = content;\n            item.appendChild(contentDiv);\n\n            chat.appendChild(item);\n            chatContainer.scrollTop = chatContainer.scrollHeight;\n            return contentDiv;\n        }\n\n        function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\n        function renderMd(text) {\n            text = text.replace(/```(\\w*)\\n?([\\s\\S]*?)```/g, (m,l,c) => '<pre><code>' + escapeHtml(c.trim()) + '</code></pre>');\n            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');\n            text = text.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');\n            text = text.replace(/\\n/g, '<br>');\n            return text;\n        }\n\n        window.onmessage = (e) => {\n            const msg = e.data;\n            switch(msg.command) {\n                case 'modelList':\n                    agentModel.innerHTML = msg.models.map(m => '<option value=\"'+m+'\"'+(m===msg.agentModel?' selected':'')+'>'+m+'</option>').join('');\n                    coderModel.innerHTML = '<option value=\"\">None</option>' + msg.models.map(m => '<option value=\"'+m+'\"'+(m===msg.coderModel?' selected':'')+'>'+m+'</option>').join('');\n                    break;\n                case 'addMessage':\n                    addLine(msg.role, msg.content);\n                    break;\n                case 'startResponse':\n                    isResponding = true;\n                    stopBtn.style.display = 'inline';\n\n                    var item = document.createElement('div');\n                    item.className = 'timeline-item assistant generating';\n                    item.id = 'current-response';\n\n                    var dot = document.createElement('div');\n                    dot.className = 'timeline-dot';\n\n                    var header = document.createElement('div');\n                    header.className = 'timeline-header';\n                    header.style.display = 'none';\n                    header.innerHTML = '<span class=\"timeline-sender\">LocalAI</span><span class=\"timeline-time\">' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '</span>';\n\n                    currentLine = document.createElement('div');\n                    currentLine.className = 'timeline-content generating-content';\n                    currentLine._raw = '';\n\n                    item.appendChild(dot);\n                    item.appendChild(header);\n                    item.appendChild(currentLine);\n                    chat.appendChild(item);\n                    chatContainer.scrollTop = chatContainer.scrollHeight;\n                    break;\n                case 'appendToken':\n                    if (currentLine) {\n                        if (currentLine.classList.contains('generating-content')) {\n                            currentLine.classList.remove('generating-content');\n                            var container = document.getElementById('current-response');\n                            if (container) {\n                                var hdr = container.querySelector('.timeline-header');\n                                if (hdr) hdr.style.display = 'flex';\n                            }\n                        }\n                        currentLine._raw += msg.token;\n                        currentLine.innerHTML = renderMd(currentLine._raw) + '<span class=\"generating-dots\"><span></span><span></span><span></span></span>';\n                        chatContainer.scrollTop = chatContainer.scrollHeight;\n                    }\n                    break;\n                case 'endResponse':\n                    var container = document.getElementById('current-response');\n                    if (currentLine && currentLine._raw && currentLine._raw.trim()) {\n                        currentLine.innerHTML = renderMd(currentLine._raw);\n                        if (container) {\n                            container.classList.remove('generating');\n                            container.classList.add('complete');\n                        }\n                    } else if (container) {\n                        container.remove();\n                    }\n                    if (container) container.removeAttribute('id');\n                    isResponding = false;\n                    stopBtn.style.display = 'none';\n                    currentLine = null;\n                    break;\n                case 'toolCall':\n                    var toolDesc = {'read_file':'📖 Reading','write_file':'📝 Writing','edit_file':'✏️ Editing','list_files':'📁 Listing','search_files':'🔍 Searching','run_terminal_command':'💻 Running'}[msg.name] || '🔧 ' + msg.name;\n                    var detail = msg.params?.path || msg.params?.pattern || msg.params?.command || '';\n                    if (detail.length > 40) detail = detail.substring(0,40) + '...';\n                    addLine('tool', '<span class=\"tool-action\">' + toolDesc + '</span>' + (detail ? ': ' + escapeHtml(detail) : ''), true);\n                    break;\n                case 'toolResult':\n                    break;\n                case 'error':\n                    isResponding = false;\n                    stopBtn.style.display = 'none';\n                    var container = document.getElementById('current-response');\n                    if (container) container.remove();\n                    currentLine = null;\n                    addLine('error', msg.text);\n                    break;\n            }\n        };\n\n        setTimeout(() => vscode.postMessage({ command: 'ready' }), 300);\n    <\/script>\n</body>\n</html>"}dispose(){for(p.currentPanel=void 0,this.panel.dispose();this.disposables.length;){const e=this.disposables.pop();e&&e.dispose()}}}t.ChatPanel=p},398(e){e.exports=require("vscode")},448(e,t,n){var o,i=this&&this.__createBinding||(Object.create?function(e,t,n,o){void 0===o&&(o=n);var i=Object.getOwnPropertyDescriptor(t,n);i&&!("get"in i?!t.__esModule:i.writable||i.configurable)||(i={enumerable:!0,get:function(){return t[n]}}),Object.defineProperty(e,o,i)}:function(e,t,n,o){void 0===o&&(o=n),e[o]=t[n]}),s=this&&this.__setModuleDefault||(Object.create?function(e,t){Object.defineProperty(e,"default",{enumerable:!0,value:t})}:function(e,t){e.default=t}),r=this&&this.__importStar||(o=function(e){return o=Object.getOwnPropertyNames||function(e){var t=[];for(var n in e)Object.prototype.hasOwnProperty.call(e,n)&&(t[t.length]=n);return t},o(e)},function(e){if(e&&e.__esModule)return e;var t={};if(null!=e)for(var n=o(e),r=0;r<n.length;r++)"default"!==n[r]&&i(t,e,n[r]);return s(t,e),t});Object.defineProperty(t,"__esModule",{value:!0}),t.OllamaService=void 0;const a=r(n(398));t.OllamaService=class{baseUrl;constructor(){this.baseUrl=this.getBaseUrl()}getBaseUrl(){return a.workspace.getConfiguration("localai").get("ollamaUrl")||"http://localhost:11434"}updateBaseUrl(){this.baseUrl=this.getBaseUrl()}setBaseUrl(e){this.baseUrl=e}getCurrentUrl(){return this.baseUrl}async chatWithTools(e,t,n,o,i){const s=`${this.baseUrl}/api/chat`,r=0===n.length,a={model:e,messages:t,tools:n.length>0?n:void 0,stream:r};console.log("[LocalAI] Chat request:",{url:s,model:e,messageCount:t.length,toolCount:n.length,toolNames:n.map(e=>e.function.name)});let l=null;for(let e=1;e<=3;e++)try{const t=await fetch(s,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(a),signal:i});if(!t.ok){if(500===t.status&&e<3){console.log(`[LocalAI] 500 error, retrying in ${3*e}s... (attempt ${e}/3)`),await new Promise(t=>setTimeout(t,3e3*e));continue}throw new Error(`Ollama API error: ${t.status} ${t.statusText}`)}return await this.processResponse(t,r,o)}catch(t){if(l=t,t instanceof DOMException&&"AbortError"===t.name)throw t;if(e<3){console.log(`[LocalAI] Request failed, retrying in ${3*e}s... (attempt ${e}/3):`,t),await new Promise(t=>setTimeout(t,3e3*e));continue}}throw l||new Error("Request failed after retries")}async processResponse(e,t,n){let o="",i=[];if(t){if(!e.body)throw new Error("No response body");const t=e.body.getReader(),s=new TextDecoder;for(;;){const{done:e,value:r}=await t.read();if(e)break;const a=s.decode(r,{stream:!0}).split("\n").filter(e=>e.trim());for(const e of a)try{const t=JSON.parse(e);t.message?.content&&(o+=t.message.content,n?.(t.message.content)),t.message?.tool_calls&&(console.log("[LocalAI] Tool calls received:",JSON.stringify(t.message.tool_calls)),i=t.message.tool_calls)}catch{}}}else{const t=await e.json();if(console.log("[LocalAI] Non-streaming response:",JSON.stringify(t,null,2)),t.message?.content&&(o=t.message.content,n?.(t.message.content)),t.message?.tool_calls&&(console.log("[LocalAI] Tool calls received:",JSON.stringify(t.message.tool_calls)),i=t.message.tool_calls),0===i.length&&o){const e=this.parseToolCallsFromContent(o);e.length>0&&(console.log("[LocalAI] Parsed tool calls from content:",JSON.stringify(e)),i=e,o="")}}return console.log("[LocalAI] Chat response:",{contentLength:o.length,toolCallCount:i.length,toolCalls:i.map(e=>e.function?.name)}),{content:o,toolCalls:i}}async chat(e,t,n){return(await this.chatWithTools(e,t,[],n)).content}async listModels(){const e=`${this.baseUrl}/api/tags`;console.log("[LocalAI] Fetching models from:",e);try{const t=await fetch(e);if(console.log("[LocalAI] Response status:",t.status),!t.ok)throw new Error(`Failed to list models: ${t.status}`);const n=await t.json();return console.log("[LocalAI] Models data:",n),n.models?.map(e=>e.name)||[]}catch(e){throw console.error("[LocalAI] Fetch error:",e),e}}async isAvailable(){try{return(await fetch(`${this.baseUrl}/api/tags`)).ok}catch{return!1}}parseToolCallsFromContent(e){const t=[],n=e=>{const t=e.name,n=e.arguments||e.parameters;return t&&n&&"object"==typeof n?{function:{name:t,arguments:n}}:null};try{const o=e.match(/```(?:json)?\s*([\s\S]*?)```/);if(o){const e=JSON.parse(o[1].trim());if(Array.isArray(e))for(const o of e){const e=n(o);e&&t.push(e)}else{const o=n(e);o&&t.push(o)}if(t.length>0)return t}const i=e.match(/\{[\s\S]*"name"\s*:\s*"(\w+)"[\s\S]*\}/);if(i)try{const e=n(JSON.parse(i[0]));if(e&&t.push(e),t.length>0)return t}catch{}const s=e.trim();if(s.startsWith("{")||s.startsWith("[")){const e=JSON.parse(s);if(Array.isArray(e))for(const o of e){const e=n(o);e&&t.push(e)}else{const o=n(e);o&&t.push(o)}}}catch{}return t}}},623(e,t,n){var o,i=this&&this.__createBinding||(Object.create?function(e,t,n,o){void 0===o&&(o=n);var i=Object.getOwnPropertyDescriptor(t,n);i&&!("get"in i?!t.__esModule:i.writable||i.configurable)||(i={enumerable:!0,get:function(){return t[n]}}),Object.defineProperty(e,o,i)}:function(e,t,n,o){void 0===o&&(o=n),e[o]=t[n]}),s=this&&this.__setModuleDefault||(Object.create?function(e,t){Object.defineProperty(e,"default",{enumerable:!0,value:t})}:function(e,t){e.default=t}),r=this&&this.__importStar||(o=function(e){return o=Object.getOwnPropertyNames||function(e){var t=[];for(var n in e)Object.prototype.hasOwnProperty.call(e,n)&&(t[t.length]=n);return t},o(e)},function(e){if(e&&e.__esModule)return e;var t={};if(null!=e)for(var n=o(e),r=0;r<n.length;r++)"default"!==n[r]&&i(t,e,n[r]);return s(t,e),t});Object.defineProperty(t,"__esModule",{value:!0}),t.tools=void 0,t.onPendingEditsChanged=function(e){return p.push(e),new a.Disposable(()=>{const t=p.indexOf(e);t>=0&&p.splice(t,1)})},t.getPendingEdit=function(e){return d.get(e)},t.getPendingEditForFile=function(e){const t=l.join(n(857).tmpdir(),"localai-diff");if(e.startsWith(t)){const t=l.basename(e).match(/^(edit_\d+_\w+)_/);if(t)return d.get(t[1])}for(const t of d.values())if(t.filePath===e)return t},t.clearPendingEdit=function(e){d.delete(e),u()},t.applyPendingEdit=async function(e){const t=d.get(e);if(!t)return"Error: Edit not found or already applied";try{c.writeFileSync(t.filePath,t.newContent,"utf-8");const n=await a.workspace.openTextDocument(t.filePath);return await a.window.showTextDocument(n,{preview:!1}),d.delete(e),f(e),await w(e),u(),`✓ Applied changes to ${t.relativePath}`}catch(e){return`Error: ${e instanceof Error?e.message:"Could not apply edit"}`}},t.rejectPendingEdit=async function(e){const t=d.get(e);return t?(d.delete(e),f(e),await w(e),u(),`✗ Rejected changes to ${t.relativePath}`):"Edit not found"},t.getAllPendingEdits=m,t.applyAllPendingEdits=async function(){const e=m();if(0===e.length)return"No pending edits to apply";const t=[];for(const n of e)try{c.writeFileSync(n.filePath,n.newContent,"utf-8"),d.delete(n.id),f(n.id),await w(n.id),t.push(`✓ ${n.relativePath}`)}catch(e){t.push(`✗ ${n.relativePath}: ${e instanceof Error?e.message:"Failed"}`)}return`Applied ${t.filter(e=>e.startsWith("✓")).length}/${e.length} edits:\n${t.join("\n")}`},t.rejectAllPendingEdits=async function(){const e=m(),t=e.length;for(const t of e)f(t.id),await w(t.id);return d.clear(),`✗ Rejected ${t} pending edit(s)`},t.getPendingEditsCount=function(){return d.size},t.getOllamaTools=function(){return t.tools.map(e=>({type:"function",function:{name:e.name,description:e.description,parameters:e.parameters}}))},t.getSystemPrompt=function(){return'Sen bir kod yazma asistanısın. Kullanıcının istediği uygulamayı TAMAMEN oluşturmalısın.\n\n## DAVRANIŞIN:\n1. Kullanıcı bir şey istediğinde, HEMEN tool kullanarak dosya oluştur\n2. Yarıda bırakma - tüm dosyaları oluşturana kadar devam et\n3. Geri bildirim bekleme - dosyaları oluştur ve devam et\n4. Her zaman write_file tool\'unu kullan, sadece açıklama yazma\n\n## TOOL KULLANIMI:\n\n### Yeni dosya oluşturmak için:\nwrite_file tool\'unu çağır:\n- path: dosya yolu (örn: "src/App.tsx")\n- content: dosyanın tam içeriği\n\n### Var olan dosyayı düzenlemek için:\n1. ÖNCE read_file ile dosyayı oku\n2. SONRA edit_file ile değiştir (old_text birebir aynı olmalı)\n\n### Proje yapısını görmek için:\nlist_files tool\'unu kullan\n\n### Komut çalıştırmak için:\nrun_terminal_command tool\'unu kullan\n\n## ÖNEMLİ:\n- Her istekte EN AZ BİR tool çağır\n- Sadece metin yazma, tool kullan!\n- Dosya oluşturmak için write_file KULLANMALISIN\n\n## ÖRNEK:\nKullanıcı: "React todo app yap"\n\nYapman gereken:\n1. write_file(path="src/App.jsx", content="import React...")\n2. write_file(path="src/components/TodoList.jsx", content="...")\n3. write_file(path="src/App.css", content="...")\n\nSADECE METİN YAZMA - TOOL KULLAN!'},t.executeTool=async function(e,n){const o=t.tools.find(t=>t.name===e);return o?await o.execute(n):`Unknown tool: ${e}`};const a=r(n(398)),l=r(n(928)),c=r(n(896));let d=new Map;const p=[];function u(){p.forEach(e=>e())}function m(){return Array.from(d.values())}const h=l.join(n(857).tmpdir(),"localai-diff");async function g(e,t,n,o,i){c.existsSync(h)||c.mkdirSync(h,{recursive:!0});const s=l.join(h,`${e}_original${l.extname(t)}`),r=l.join(h,`${e}_modified${l.extname(t)}`);c.writeFileSync(s,o,"utf-8"),c.writeFileSync(r,i,"utf-8");const d=a.Uri.file(s),p=a.Uri.file(r);await a.commands.executeCommand("vscode.diff",d,p,`${n} (Proposed Changes - ${e.slice(-6)})`)}function f(e){try{c.readdirSync(h).filter(t=>t.startsWith(e)).forEach(e=>{c.unlinkSync(l.join(h,e))})}catch{}}async function w(e){const t=a.window.tabGroups.all.flatMap(e=>e.tabs);for(const n of t)n.label.includes(e.slice(-6))&&n.input&&await a.window.tabGroups.close(n)}function y(e,t,n){const o=e.split("\n"),i=t.split("\n");let s=0,r=0;const a=Math.max(o.length,i.length);for(let e=0;e<a;e++)o[e]!==i[e]&&(void 0!==o[e]&&r++,void 0!==i[e]&&s++);return`📝 ${n}: +${s} -${r} lines`}function v(e){const t={...e};return t.path||(t.path=e.file_path||e.filepath||e.file||e.filename||e.name||""),t.content||(t.content=e.code||e.text||e.data||e.body||""),t.old_text||(t.old_text=e.oldText||e.old||e.find||e.search||e.original||""),t.new_text||(t.new_text=e.newText||e.new||e.replace||e.replacement||""),t.command||(t.command=e.cmd||e.shell||e.exec||""),t.pattern||(t.pattern=e.query||e.search||e.regex||""),t}t.tools=[{name:"read_file",description:"Read the contents of a file. Use this to understand code before making changes.",parameters:{type:"object",properties:{path:{type:"string",description:"File path relative to project root"},start_line:{type:"string",description:"Optional: starting line number (1-indexed)"},end_line:{type:"string",description:"Optional: ending line number (1-indexed)"}},required:["path"]},execute:async e=>{const t=v(e);if(!t.path)return"Error: path parameter is required. Received: "+JSON.stringify(e);const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=l.join(n,t.path);try{const e=c.readFileSync(o,"utf-8").split("\n"),n=t.start_line?parseInt(t.start_line)-1:0,i=t.end_line?parseInt(t.end_line):e.length,s=e.slice(n,i).map((e,t)=>`${(n+t+1).toString().padStart(4)}: ${e}`);return`File: ${t.path}\n${"─".repeat(50)}\n${s.join("\n")}`}catch(e){return`Error: ${e instanceof Error?e.message:"Could not read file"}`}}},{name:"write_file",description:"Create a new file or completely overwrite an existing file. Shows diff preview for user approval.",parameters:{type:"object",properties:{path:{type:"string",description:"File path relative to project root"},content:{type:"string",description:"Complete file content to write"}},required:["path","content"]},execute:async e=>{const t=v(e);if(!t.path)return"Error: path parameter is required. Received: "+JSON.stringify(e);if(!t.content)return"Error: content parameter is required. Received: "+JSON.stringify(e);const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=l.join(n,t.path);try{const e=l.dirname(o);c.existsSync(e)||c.mkdirSync(e,{recursive:!0});const n=c.existsSync(o)?c.readFileSync(o,"utf-8"):"",i=t.content,s=`edit_${Date.now()}_${Math.random().toString(36).substring(2,11)}`,r={id:s,filePath:o,relativePath:t.path,oldContent:n,newContent:i,oldText:n,newText:i,timestamp:Date.now()};return d.set(s,r),u(),await g(s,o,t.path,n,i),`PENDING_EDIT:${s}\n${""===n?`📄 New file: ${t.path} (${i.split("\n").length} lines)`:y(n,i,t.path)}\n\n👆 VSCode diff editor açıldı. Değişiklikleri inceleyin.`}catch(e){return`Error: ${e instanceof Error?e.message:"Could not write file"}`}}},{name:"edit_file",description:"Replace text in a file. Shows diff preview for user approval before applying changes.",parameters:{type:"object",properties:{path:{type:"string",description:"File path relative to project root"},old_text:{type:"string",description:"Exact text to find (must match exactly including whitespace)"},new_text:{type:"string",description:"New text to replace with"}},required:["path","old_text","new_text"]},execute:async e=>{const t=v(e);if(!t.path)return"Error: path parameter is required. Received: "+JSON.stringify(e);if(!t.old_text)return"Error: old_text parameter is required. Received: "+JSON.stringify(e);if(!t.new_text&&""!==t.new_text)return"Error: new_text parameter is required. Received: "+JSON.stringify(e);const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=l.join(n,t.path);if(!c.existsSync(o)){const e=c.readdirSync(n),o=e.filter(e=>e.includes(t.path.replace(/^\.\//,"").split("/").pop()||""));return`Error: File not found: ${t.path}\n\nFiles in project root:\n${e.slice(0,20).map(e=>"  "+e).join("\n")}${o.length>0?"\n\nDid you mean: "+o.join(", "):""}`}try{const e=c.readFileSync(o,"utf-8");if(!e.includes(t.old_text)){const n=e.split("\n"),o=n.slice(0,30).map((e,t)=>`${t+1}: ${e}`).join("\n");return`Error: old_text not found in file.\n\nActual content of ${t.path}:\n${"─".repeat(40)}\n${o}${n.length>30?"\n... ("+(n.length-30)+" more lines)":""}\n${"─".repeat(40)}\n\nCopy the EXACT text you want to replace from above.`}const n=e.replace(t.old_text,t.new_text),i=`edit_${Date.now()}_${Math.random().toString(36).substring(2,11)}`,s={id:i,filePath:o,relativePath:t.path,oldContent:e,newContent:n,oldText:t.old_text,newText:t.new_text,timestamp:Date.now()};return d.set(i,s),u(),await g(i,o,t.path,e,n),`PENDING_EDIT:${i}\n${y(e,n,t.path)}\n\n👆 VSCode diff editor açıldı. Değişiklikleri inceleyin.`}catch(e){return`Error: ${e instanceof Error?e.message:"Could not edit file"}`}}},{name:"list_files",description:"List files and folders in a directory. Use to explore project structure.",parameters:{type:"object",properties:{path:{type:"string",description:'Directory path relative to project root (use "." for root)'},recursive:{type:"string",description:'Set to "true" to list recursively (max 3 levels)'}},required:["path"]},execute:async e=>{const t=v(e),n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=l.join(n,t.path||"."),i="true"===t.recursive,s=["node_modules",".git","dist","out",".vscode","__pycache__","venv"];try{const e=function e(t,n="",o=0){if(o>3)return[];const r=c.readdirSync(t,{withFileTypes:!0}),a=[];for(const c of r){if(c.name.startsWith(".")&&".env"!==c.name)continue;if(s.includes(c.name))continue;const r=c.isDirectory();if(a.push(`${n}${r?"📁 ":"📄 "}${c.name}`),r&&i){const i=l.join(t,c.name);a.push(...e(i,n+"  ",o+1))}}return a}(o);return e.length>0?e.join("\n"):"Empty directory"}catch(e){return`Error: ${e instanceof Error?e.message:"Could not list directory"}`}}},{name:"grep",description:"Search for text/pattern in files. Returns matching lines with file paths and line numbers.",parameters:{type:"object",properties:{pattern:{type:"string",description:"Text or regex pattern to search for"},path:{type:"string",description:"Directory to search in (default: project root)"},file_pattern:{type:"string",description:'File glob pattern like "*.ts" or "*.py" (default: all files)'}},required:["pattern"]},execute:async e=>{const t=v(e);if(!t.pattern)return"Error: pattern parameter is required. Received: "+JSON.stringify(e);const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=t.path?l.join(n,t.path):n,i=(t.file_pattern,[]),s=["node_modules",".git","dist","out","__pycache__"];try{return function e(o){if(i.length>=50)return;const r=c.readdirSync(o,{withFileTypes:!0});for(const a of r){if(i.length>=50)break;if(s.includes(a.name))continue;if(a.name.startsWith("."))continue;const r=l.join(o,a.name);if(a.isDirectory())e(r);else if(a.isFile()){if(t.file_pattern){const e=t.file_pattern.replace("*","");if(!a.name.endsWith(e))continue}try{const e=c.readFileSync(r,"utf-8").split("\n"),o=new RegExp(t.pattern,"gi");e.forEach((e,t)=>{if(!(i.length>=50)){if(o.test(e)){const o=l.relative(n,r);i.push(`${o}:${t+1}: ${e.trim()}`)}o.lastIndex=0}})}catch{}}}}(o),0===i.length?`No matches found for "${t.pattern}"`:`Found ${i.length} match(es):\n${"─".repeat(50)}\n${i.join("\n")}`}catch(e){return`Error: ${e instanceof Error?e.message:"Search failed"}`}}},{name:"get_selection",description:"Get the currently selected text in the active editor",parameters:{type:"object",properties:{},required:[]},execute:async()=>{const e=a.window.activeTextEditor;if(!e)return"No active editor";const t=e.selection,n=e.document.getText(t);return n?`Selected text from ${l.basename(e.document.fileName)} (lines ${t.start.line+1}-${t.end.line+1}):\n${"─".repeat(50)}\n${n}`:"No text selected"}},{name:"get_open_file",description:"Get the full content of the currently open file in editor",parameters:{type:"object",properties:{},required:[]},execute:async()=>{const e=a.window.activeTextEditor;if(!e)return"No file is open";const t=l.basename(e.document.fileName),n=e.document.getText().split("\n").map((e,t)=>`${(t+1).toString().padStart(4)}: ${e}`);return`File: ${t}\n${"─".repeat(50)}\n${n.join("\n")}`}},{name:"run_terminal_command",description:"Run a shell command. Use for npm, git, build commands etc.",parameters:{type:"object",properties:{command:{type:"string",description:"Shell command to run"}},required:["command"]},execute:async e=>{const t=v(e);return t.command?new Promise(e=>{const{exec:o}=n(317),i=a.workspace.workspaceFolders?.[0]?.uri.fsPath||"";o(t.command,{cwd:i,timeout:3e4},(n,o,i)=>{if(n)e(`Error: ${n.message}\n${i}`);else{const n=o||i||"Command completed (no output)";e(`$ ${t.command}\n${"─".repeat(50)}\n${n}`)}})}):"Error: command parameter is required. Received: "+JSON.stringify(e)}},{name:"show_diff",description:"Show a diff preview of changes without applying them",parameters:{type:"object",properties:{path:{type:"string",description:"File path"},new_content:{type:"string",description:"Proposed new content"}},required:["path","new_content"]},execute:async e=>{const t=v(e);if(!t.path)return"Error: path parameter is required. Received: "+JSON.stringify(e);const n=a.workspace.workspaceFolders?.[0]?.uri.fsPath;if(!n)return"Error: No workspace folder open";const o=l.join(n,t.path);try{const e=(c.existsSync(o)?c.readFileSync(o,"utf-8"):"").split("\n"),n=(t.new_content||"").split("\n"),i=[`Diff for ${t.path}:`,"─".repeat(50)],s=Math.max(e.length,n.length);for(let t=0;t<s;t++){const o=e[t]||"",s=n[t]||"";o!==s&&(void 0!==e[t]&&i.push(`- ${t+1}: ${o}`),void 0!==n[t]&&i.push(`+ ${t+1}: ${s}`))}return i.join("\n")}catch(e){return`Error: ${e instanceof Error?e.message:"Could not generate diff"}`}}}]},857(e){e.exports=require("os")},896(e){e.exports=require("fs")},928(e){e.exports=require("path")}},t={},n=function n(o){var i=t[o];if(void 0!==i)return i.exports;var s=t[o]={exports:{}};return e[o].call(s.exports,s,s.exports,n),s.exports}(265);module.exports=n})();
+/******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+/******/ 	var __webpack_modules__ = ([
+/* 0 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.activate = activate;
+exports.deactivate = deactivate;
+exports.showGeneratingStatus = showGeneratingStatus;
+exports.updateGeneratingStatus = updateGeneratingStatus;
+exports.hideGeneratingStatus = hideGeneratingStatus;
+exports.showReadyStatus = showReadyStatus;
+const vscode = __importStar(__webpack_require__(1));
+const chatPanel_1 = __webpack_require__(2);
+const memory_1 = __webpack_require__(10);
+const tools_1 = __webpack_require__(5);
+// Status bar item for showing generation status
+let statusBarItem;
+// Memory service (shared with ChatPanel)
+let memoryService;
+function activate(context) {
+    console.log('LocalAI extension is now active!');
+    // Create status bar item
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem.name = 'LocalAI Status';
+    context.subscriptions.push(statusBarItem);
+    // Initialize memory service
+    memoryService = new memory_1.MemoryService(context);
+    // Command to open chat in editor panel
+    const openChatCommand = vscode.commands.registerCommand('localai.openChat', () => {
+        chatPanel_1.ChatPanel.createOrShow(context.extensionUri, memoryService);
+    });
+    // Apply edit command (for diff editor toolbar)
+    const applyEditCommand = vscode.commands.registerCommand('localai.applyEdit', async () => {
+        // Önce aktif editor'dan bulmayı dene
+        const activeEditor = vscode.window.activeTextEditor;
+        let pendingEdit = activeEditor ? (0, tools_1.getPendingEditForFile)(activeEditor.document.uri.fsPath) : undefined;
+        // Bulunamadıysa, en son pending edit'i al
+        if (!pendingEdit) {
+            const allEdits = (0, tools_1.getAllPendingEdits)();
+            if (allEdits.length > 0) {
+                pendingEdit = allEdits[allEdits.length - 1];
+            }
+        }
+        if (pendingEdit) {
+            const result = await (0, tools_1.applyPendingEdit)(pendingEdit.id);
+            vscode.window.showInformationMessage(result);
+            updatePendingEditContext();
+        }
+        else {
+            vscode.window.showWarningMessage('No pending edit found');
+        }
+    });
+    // Reject edit command (for diff editor toolbar)
+    const rejectEditCommand = vscode.commands.registerCommand('localai.rejectEdit', async () => {
+        // Önce aktif editor'dan bulmayı dene
+        const activeEditor = vscode.window.activeTextEditor;
+        let pendingEdit = activeEditor ? (0, tools_1.getPendingEditForFile)(activeEditor.document.uri.fsPath) : undefined;
+        // Bulunamadıysa, en son pending edit'i al
+        if (!pendingEdit) {
+            const allEdits = (0, tools_1.getAllPendingEdits)();
+            if (allEdits.length > 0) {
+                pendingEdit = allEdits[allEdits.length - 1];
+            }
+        }
+        if (pendingEdit) {
+            const result = await (0, tools_1.rejectPendingEdit)(pendingEdit.id);
+            vscode.window.showInformationMessage(result);
+            updatePendingEditContext();
+        }
+        else {
+            vscode.window.showWarningMessage('No pending edit found');
+        }
+    });
+    // Update context when pending edits change
+    function updatePendingEditContext() {
+        // Herhangi bir pending edit varsa butonları göster
+        const hasPending = (0, tools_1.getPendingEditsCount)() > 0;
+        vscode.commands.executeCommand('setContext', 'localai.hasPendingEdit', hasPending);
+    }
+    // Listen to editor changes to update context
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
+        updatePendingEditContext();
+    }));
+    // Listen to pending edits changes
+    context.subscriptions.push((0, tools_1.onPendingEditsChanged)(() => {
+        updatePendingEditContext();
+    }));
+    // Stop generation command (for status bar click)
+    const stopGenerationCommand = vscode.commands.registerCommand('localai.stopGeneration', () => {
+        // ChatPanel'a stop mesajı gönder
+        if (chatPanel_1.ChatPanel.currentPanel) {
+            chatPanel_1.ChatPanel.currentPanel.stopGeneration();
+        }
+    });
+    context.subscriptions.push(openChatCommand, applyEditCommand, rejectEditCommand, stopGenerationCommand);
+}
+function deactivate() {
+    if (chatPanel_1.ChatPanel.currentPanel) {
+        chatPanel_1.ChatPanel.currentPanel.dispose();
+    }
+}
+// Status bar update functions
+function showGeneratingStatus(model) {
+    if (statusBarItem) {
+        statusBarItem.text = `$(sync~spin) LocalAI: Generating...`;
+        statusBarItem.tooltip = `Model: ${model}\nClick to stop`;
+        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        statusBarItem.command = 'localai.stopGeneration';
+        statusBarItem.show();
+    }
+}
+function updateGeneratingStatus(elapsed) {
+    if (statusBarItem) {
+        statusBarItem.text = `$(sync~spin) LocalAI: ${elapsed}s`;
+        if (elapsed >= 60) {
+            statusBarItem.text = `$(warning) LocalAI: ${elapsed}s - slow response`;
+            statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        }
+    }
+}
+function hideGeneratingStatus() {
+    if (statusBarItem) {
+        statusBarItem.hide();
+    }
+}
+function showReadyStatus() {
+    if (statusBarItem) {
+        statusBarItem.text = `$(check) LocalAI: Ready`;
+        statusBarItem.tooltip = 'LocalAI is ready';
+        statusBarItem.backgroundColor = undefined;
+        statusBarItem.command = undefined;
+        statusBarItem.show();
+        // 3 saniye sonra gizle
+        setTimeout(() => {
+            if (statusBarItem.text === '$(check) LocalAI: Ready') {
+                statusBarItem.hide();
+            }
+        }, 3000);
+    }
+}
+
+
+/***/ }),
+/* 1 */
+/***/ ((module) => {
+
+module.exports = require("vscode");
+
+/***/ }),
+/* 2 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ChatPanel = void 0;
+const vscode = __importStar(__webpack_require__(1));
+const ollama_1 = __webpack_require__(3);
+const vllmService_1 = __webpack_require__(4);
+const tools_1 = __webpack_require__(5);
+const extension_1 = __webpack_require__(0);
+class ChatPanel {
+    static currentPanel;
+    panel;
+    extensionUri;
+    ollama;
+    vllm;
+    currentProvider = 'ollama';
+    messages = [];
+    agentModel = '';
+    coderModel = '';
+    abortController = null;
+    memory;
+    currentSession = null;
+    waitingForApproval = false;
+    lastPendingCount = 0;
+    autoApproveMode = false;
+    disposables = [];
+    constructor(panel, extensionUri, memoryService) {
+        this.panel = panel;
+        this.extensionUri = extensionUri;
+        this.ollama = new ollama_1.OllamaService();
+        this.vllm = new vllmService_1.VllmService();
+        this.memory = memoryService;
+        this.panel.webview.html = this.getHtmlContent();
+        // Pending edit değişikliklerini dinle
+        (0, tools_1.onPendingEditsChanged)(() => {
+            const currentCount = (0, tools_1.getPendingEditsCount)();
+            if (this.waitingForApproval && currentCount < this.lastPendingCount) {
+                this.waitingForApproval = false;
+                this.continueAfterApproval();
+            }
+            this.lastPendingCount = currentCount;
+            this.updatePendingEditsCount();
+        });
+        this.panel.webview.onDidReceiveMessage(async (message) => {
+            switch (message.command) {
+                case 'sendMessage':
+                    await this.handleUserMessage(message.text, message.context);
+                    break;
+                case 'selectAgentModel':
+                    this.agentModel = message.model;
+                    break;
+                case 'selectCoderModel':
+                    this.coderModel = message.model;
+                    break;
+                case 'selectProvider':
+                    this.currentProvider = message.provider;
+                    // Reset models so sendModelList() will pick correct defaults for new provider
+                    this.agentModel = '';
+                    this.coderModel = '';
+                    console.log('[LocalAI] Provider changed to:', this.currentProvider);
+                    await this.sendModelList();
+                    break;
+                case 'getModels':
+                    await this.sendModelList();
+                    break;
+                case 'updateApiUrl':
+                    this.getActiveProvider().setBaseUrl(message.url);
+                    await this.sendModelList();
+                    break;
+                case 'clearChat':
+                    this.messages = [];
+                    await this.memory.clearCurrentMessages();
+                    break;
+                case 'newSession':
+                    this.messages = [];
+                    this.currentSession = await this.memory.createNewSession(this.agentModel);
+                    break;
+                case 'loadSession':
+                    await this.loadSession(message.sessionId);
+                    break;
+                case 'getSessions':
+                    await this.sendSessionList();
+                    break;
+                case 'deleteSession':
+                    await this.memory.deleteSession(message.sessionId);
+                    await this.sendSessionList();
+                    break;
+                case 'stopGeneration':
+                    this.stopGeneration();
+                    break;
+                case 'ready':
+                    await this.sendModelList();
+                    await this.initSession();
+                    await this.sendSessionList();
+                    if (this.currentSession && this.messages.length > 0) {
+                        this.panel.webview.postMessage({
+                            command: 'loadedSession',
+                            session: {
+                                id: this.currentSession.id,
+                                title: this.currentSession.title,
+                                model: this.currentSession.model,
+                                messageCount: this.messages.length
+                            },
+                            messages: this.messages.filter(m => m.role === 'user' || m.role === 'assistant')
+                        });
+                    }
+                    break;
+                case 'approveEdit':
+                    const approveResult = await (0, tools_1.applyPendingEdit)(message.editId);
+                    this.panel.webview.postMessage({
+                        command: 'editResult',
+                        editId: message.editId,
+                        result: approveResult,
+                        approved: true
+                    });
+                    this.updatePendingEditsCount();
+                    if (approveResult.includes('✓') && this.waitingForApproval) {
+                        this.waitingForApproval = false;
+                        await this.continueAfterApproval();
+                    }
+                    break;
+                case 'rejectEdit':
+                    const rejectResult = await (0, tools_1.rejectPendingEdit)(message.editId);
+                    this.panel.webview.postMessage({
+                        command: 'editResult',
+                        editId: message.editId,
+                        result: rejectResult,
+                        approved: false
+                    });
+                    this.updatePendingEditsCount();
+                    break;
+                case 'approveAllEdits':
+                    const approveAllResult = await (0, tools_1.applyAllPendingEdits)();
+                    this.panel.webview.postMessage({
+                        command: 'bulkEditResult',
+                        result: approveAllResult,
+                        approved: true
+                    });
+                    this.updatePendingEditsCount();
+                    break;
+                case 'rejectAllEdits':
+                    const rejectAllResult = (0, tools_1.rejectAllPendingEdits)();
+                    this.panel.webview.postMessage({
+                        command: 'bulkEditResult',
+                        result: rejectAllResult,
+                        approved: false
+                    });
+                    this.updatePendingEditsCount();
+                    break;
+                case 'setAutoApprove':
+                    this.autoApproveMode = message.enabled;
+                    if (this.autoApproveMode && this.waitingForApproval) {
+                        // Hemen bekleyen editleri onayla
+                        await (0, tools_1.applyAllPendingEdits)();
+                        this.waitingForApproval = false;
+                        this.updatePendingEditsCount();
+                        await this.continueAfterApproval();
+                    }
+                    break;
+                case 'getContext':
+                    await this.handleGetContext(message.type, message.value);
+                    break;
+                case 'openFile':
+                    this.openFile(message.path, message.line);
+                    break;
+            }
+        }, null, this.disposables);
+        this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    }
+    static createOrShow(extensionUri, memoryService) {
+        const column = vscode.ViewColumn.Beside;
+        if (ChatPanel.currentPanel) {
+            ChatPanel.currentPanel.panel.reveal(column);
+            return ChatPanel.currentPanel;
+        }
+        const panel = vscode.window.createWebviewPanel('localaiChat', 'LocalAI', column, {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+            localResourceRoots: [extensionUri]
+        });
+        ChatPanel.currentPanel = new ChatPanel(panel, extensionUri, memoryService);
+        return ChatPanel.currentPanel;
+    }
+    stopGeneration() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.waitingForApproval = false;
+        (0, extension_1.hideGeneratingStatus)();
+        this.panel.webview.postMessage({ command: 'endResponse' });
+    }
+    async initSession() {
+        const existingSession = await this.memory.loadCurrentSession();
+        if (existingSession) {
+            this.currentSession = existingSession;
+            this.messages = existingSession.messages;
+            this.agentModel = existingSession.model;
+        }
+        else {
+            this.currentSession = await this.memory.createNewSession(this.agentModel);
+        }
+    }
+    async loadSession(sessionId) {
+        const sessions = await this.memory.getAllSessions();
+        const session = sessions.find(s => s.id === sessionId);
+        if (session) {
+            this.currentSession = session;
+            this.messages = session.messages;
+            this.agentModel = session.model;
+            this.panel.webview.postMessage({
+                command: 'loadedSession',
+                session: { id: session.id, title: session.title, model: session.model, messageCount: session.messages.length },
+                messages: session.messages.filter(m => m.role === 'user' || m.role === 'assistant')
+            });
+        }
+    }
+    async sendSessionList() {
+        const sessions = await this.memory.getAllSessions();
+        this.panel.webview.postMessage({
+            command: 'sessionList',
+            sessions: sessions.map(s => ({
+                id: s.id, title: s.title, model: s.model,
+                messageCount: s.messages.length, updatedAt: s.updatedAt
+            })),
+            currentSessionId: this.currentSession?.id
+        });
+    }
+    async saveCurrentSession() {
+        if (this.currentSession) {
+            this.currentSession.messages = this.messages;
+            this.currentSession.model = this.agentModel;
+            await this.memory.saveSession(this.currentSession);
+        }
+    }
+    updatePendingEditsCount() {
+        this.panel.webview.postMessage({
+            command: 'pendingEditsCount',
+            count: (0, tools_1.getPendingEditsCount)()
+        });
+    }
+    async handleGetContext(type, value) {
+        let content = '';
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        try {
+            if (type === 'special') {
+                if (value === '@selection') {
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor) {
+                        content = editor.document.getText(editor.selection) || '(No text selected)';
+                    }
+                }
+                else if (value === '@file') {
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor) {
+                        content = `File: ${editor.document.fileName}\n${'─'.repeat(40)}\n${editor.document.getText()}`;
+                    }
+                }
+                else if (value === '@errors') {
+                    const editor = vscode.window.activeTextEditor;
+                    if (editor) {
+                        const diagnostics = vscode.languages.getDiagnostics(editor.document.uri);
+                        content = diagnostics.length > 0
+                            ? diagnostics.map(d => `Line ${d.range.start.line + 1}: [${d.severity === 0 ? 'Error' : 'Warning'}] ${d.message}`).join('\n')
+                            : '(No errors in current file)';
+                    }
+                }
+            }
+            else if (type === 'file' && workspaceRoot) {
+                const filePath = value.replace('@file:', '');
+                const fullPath = (__webpack_require__(6).join)(workspaceRoot, filePath);
+                const fs = __webpack_require__(7);
+                if (fs.existsSync(fullPath)) {
+                    content = `File: ${filePath}\n${'─'.repeat(40)}\n${fs.readFileSync(fullPath, 'utf-8')}`;
+                }
+            }
+        }
+        catch (error) {
+            content = `(Error: ${error instanceof Error ? error.message : 'Unknown'})`;
+        }
+        this.panel.webview.postMessage({ command: 'contextData', value, content });
+    }
+    async openFile(filePath, line) {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot)
+            return;
+        const fullPath = vscode.Uri.file(filePath.startsWith('/') || filePath.includes(':') ? filePath : `${workspaceRoot}/${filePath}`);
+        try {
+            const doc = await vscode.workspace.openTextDocument(fullPath);
+            const editor = await vscode.window.showTextDocument(doc);
+            if (line && line > 0) {
+                const position = new vscode.Position(line - 1, 0);
+                editor.selection = new vscode.Selection(position, position);
+                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+            }
+        }
+        catch {
+            vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+        }
+    }
+    getActiveProvider() {
+        return this.currentProvider === 'vllm' ? this.vllm : this.ollama;
+    }
+    async sendModelList() {
+        const provider = this.getActiveProvider();
+        try {
+            const models = await provider.listModels();
+            const toolCapable = ['llama3.1', 'llama3.2', 'llama3.3', 'mistral'];
+            if (models.length > 0 && !this.agentModel) {
+                this.agentModel = models.find(m => toolCapable.some(tc => m.toLowerCase().includes(tc))) || models[0];
+            }
+            if (models.length > 0 && !this.coderModel) {
+                this.coderModel = models.find(m => m.toLowerCase().includes('coder') || m.toLowerCase().includes('qwen')) || '';
+            }
+            this.panel.webview.postMessage({
+                command: 'modelList', models, agentModel: this.agentModel, coderModel: this.coderModel, provider: this.currentProvider
+            });
+        }
+        catch (error) {
+            const errorText = this.currentProvider === 'ollama'
+                ? 'Ollama bağlantısı kurulamadı. ollama serve çalışıyor mu?'
+                : 'vLLM bağlantısı kurulamadı. Server çalışıyor mu?';
+            this.panel.webview.postMessage({
+                command: 'error',
+                text: errorText
+            });
+        }
+    }
+    async handleUserMessage(text, context) {
+        let fullMessage = text;
+        if (context && context.length > 0) {
+            const contextParts = context.filter(c => c.content).map(c => `[${c.label}]\n${c.content}`);
+            if (contextParts.length > 0) {
+                fullMessage = `Context:\n${contextParts.join('\n\n')}\n\nUser request: ${text}`;
+            }
+        }
+        this.messages.push({ role: 'user', content: fullMessage });
+        await this.saveCurrentSession();
+        this.panel.webview.postMessage({ command: 'addMessage', role: 'user', content: text });
+        this.panel.webview.postMessage({ command: 'startResponse' });
+        try {
+            await this.runAgentLoop();
+        }
+        catch (error) {
+            (0, extension_1.hideGeneratingStatus)();
+            if (error.name === 'AbortError') {
+                this.panel.webview.postMessage({ command: 'appendToken', token: '\n\n*[Durduruldu]*' });
+            }
+            else {
+                this.panel.webview.postMessage({ command: 'error', text: error instanceof Error ? error.message : 'Bilinmeyen hata' });
+            }
+        }
+        if (!this.waitingForApproval) {
+            this.panel.webview.postMessage({ command: 'endResponse' });
+        }
+    }
+    async runAgentLoop() {
+        const maxIterations = 10;
+        let iteration = 0;
+        let statusUpdateInterval = null;
+        const loopStartTime = Date.now();
+        this.abortController = new AbortController();
+        const activeAgentModel = this.agentModel || this.coderModel;
+        if (!activeAgentModel) {
+            throw new Error('Lütfen en az bir model seçin');
+        }
+        (0, extension_1.showGeneratingStatus)(activeAgentModel);
+        statusUpdateInterval = setInterval(() => {
+            (0, extension_1.updateGeneratingStatus)(Math.floor((Date.now() - loopStartTime) / 1000));
+        }, 1000);
+        try {
+            while (iteration < maxIterations) {
+                if (this.abortController?.signal.aborted) {
+                    throw new DOMException('Aborted', 'AbortError');
+                }
+                iteration++;
+                const messagesWithSystem = [
+                    { role: 'system', content: (0, tools_1.getSystemPrompt)() },
+                    ...this.messages
+                ];
+                const tools = (0, tools_1.getOllamaTools)();
+                const provider = this.getActiveProvider();
+                const { content, toolCalls } = await provider.chatWithTools(activeAgentModel, messagesWithSystem, tools, (token) => {
+                    this.panel.webview.postMessage({ command: 'appendToken', token });
+                }, this.abortController.signal);
+                if (toolCalls && toolCalls.length > 0) {
+                    this.messages.push({ role: 'assistant', content, tool_calls: toolCalls });
+                    this.panel.webview.postMessage({ command: 'endResponse' });
+                    for (const toolCall of toolCalls) {
+                        if (this.abortController?.signal.aborted) {
+                            throw new DOMException('Aborted', 'AbortError');
+                        }
+                        const toolName = toolCall.function.name;
+                        let toolParams = toolCall.function.arguments;
+                        // Coder model için kod üretimi
+                        const needsCodeGeneration = ['write_file', 'edit_file'].includes(toolName)
+                            && this.coderModel && this.coderModel !== this.agentModel
+                            && (!toolParams.content || toolParams.content.length < 50);
+                        if (needsCodeGeneration) {
+                            this.panel.webview.postMessage({ command: 'startCodeGeneration', coderModel: this.coderModel });
+                            const codeContent = await this.generateCodeWithCoderModel(toolName, toolParams);
+                            if (codeContent)
+                                toolParams = { ...toolParams, content: codeContent };
+                            this.panel.webview.postMessage({ command: 'endCodeGeneration' });
+                        }
+                        const displayParams = { ...toolParams };
+                        if (['write_file', 'edit_file'].includes(toolName)) {
+                            if (displayParams.content)
+                                displayParams.content = `[${displayParams.content.split('\n').length} satır]`;
+                            if (displayParams.new_text)
+                                displayParams.new_text = `[${displayParams.new_text.split('\n').length} satır]`;
+                            if (displayParams.old_text)
+                                displayParams.old_text = `[${displayParams.old_text.split('\n').length} satır]`;
+                        }
+                        this.panel.webview.postMessage({ command: 'toolCall', name: toolName, params: displayParams });
+                        const toolResult = await (0, tools_1.executeTool)(toolName, toolParams);
+                        let displayResult = toolResult;
+                        if (toolName === 'read_file')
+                            displayResult = '✓ dosya okundu';
+                        else if (toolName === 'write_file')
+                            displayResult = '✓ dosya yazıldı';
+                        else if (toolName === 'edit_file')
+                            displayResult = '✓ dosya düzenlendi';
+                        this.panel.webview.postMessage({ command: 'toolResult', name: toolName, result: displayResult });
+                        this.messages.push({ role: 'tool', content: toolResult });
+                        if (['write_file', 'edit_file'].includes(toolName) && toolResult.includes('PENDING_EDIT')) {
+                            // Auto-approve modunda ise hemen onayla ve devam et
+                            if (this.autoApproveMode) {
+                                await (0, tools_1.applyAllPendingEdits)();
+                                this.updatePendingEditsCount();
+                                this.panel.webview.postMessage({
+                                    command: 'toolResult',
+                                    name: toolName,
+                                    result: '✓ otomatik onaylandı'
+                                });
+                                continue;
+                            }
+                            this.waitingForApproval = true;
+                            this.lastPendingCount = (0, tools_1.getPendingEditsCount)();
+                            this.messages.push({ role: 'assistant', content: 'Değişiklikler diff editörde. Onaylayın veya reddedin.' });
+                            await this.saveCurrentSession();
+                            if (statusUpdateInterval)
+                                clearInterval(statusUpdateInterval);
+                            (0, extension_1.hideGeneratingStatus)();
+                            this.panel.webview.postMessage({ command: 'endResponse' });
+                            return;
+                        }
+                    }
+                    this.panel.webview.postMessage({ command: 'startResponse' });
+                    continue;
+                }
+                else {
+                    this.messages.push({ role: 'assistant', content });
+                    await this.saveCurrentSession();
+                    break;
+                }
+            }
+        }
+        finally {
+            if (statusUpdateInterval)
+                clearInterval(statusUpdateInterval);
+            (0, extension_1.hideGeneratingStatus)();
+            (0, extension_1.showReadyStatus)();
+            this.abortController = null;
+        }
+    }
+    async generateCodeWithCoderModel(toolName, params) {
+        if (!this.coderModel)
+            return null;
+        const userMessages = this.messages.filter(m => m.role === 'user');
+        const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
+        const coderPrompt = toolName === 'edit_file'
+            ? `Edit code based on: ${lastUserMessage}\nFile: ${params.path}\nOld text: ${params.old_text}\nProvide ONLY the new code.`
+            : `Generate code for: ${lastUserMessage}\nFile: ${params.path}\nProvide ONLY the file content.`;
+        try {
+            const codeResult = await this.getActiveProvider().chatWithTools(this.coderModel, [{ role: 'user', content: coderPrompt }], [], () => { }, this.abortController?.signal);
+            let cleanCode = codeResult.content.trim();
+            const codeBlockMatch = cleanCode.match(/```[\w]*\n([\s\S]*?)```/);
+            if (codeBlockMatch)
+                cleanCode = codeBlockMatch[1].trim();
+            return cleanCode;
+        }
+        catch {
+            return null;
+        }
+    }
+    async continueAfterApproval() {
+        this.messages.push({ role: 'user', content: '[Değişiklikler onaylandı. Devam et.]' });
+        this.panel.webview.postMessage({ command: 'startResponse' });
+        try {
+            await this.runAgentLoop();
+        }
+        catch (error) {
+            if (!(error instanceof DOMException && error.name === 'AbortError')) {
+                this.panel.webview.postMessage({ command: 'error', text: error instanceof Error ? error.message : 'Hata' });
+            }
+        }
+    }
+    getHtmlContent() {
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalAI</title>
+    <style>
+        :root {
+            --bg: #1e1e1e;
+            --bg-light: #252526;
+            --bg-lighter: #2d2d2d;
+            --border: #3c3c3c;
+            --text: #d4d4d4;
+            --text-dim: #808080;
+            --green: #4ec957;
+            --cyan: #56b6c2;
+            --yellow: #e5c07b;
+            --red: #e06c75;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-size: 13px;
+        }
+        /* Header */
+        .header {
+            padding: 8px 12px;
+            background: var(--bg-light);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .header input, .header select {
+            background: var(--bg-lighter);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .header input { flex: 1; min-width: 120px; }
+        .header select { min-width: 100px; }
+        .header button {
+            background: var(--bg-lighter);
+            color: var(--cyan);
+            border: 1px solid var(--border);
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .header button:hover { background: var(--border); }
+        .model-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+        .model-label { font-size: 10px; color: var(--cyan); font-weight: bold; }
+        /* Chat */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 16px 16px 24px;
+        }
+        .timeline {
+            border-left: 2px solid var(--border);
+            margin-left: 6px;
+            padding-left: 20px;
+        }
+        .timeline-item {
+            position: relative;
+            padding-bottom: 16px;
+        }
+        .timeline-item:last-child { padding-bottom: 24px; }
+        .timeline-dot {
+            position: absolute;
+            left: -27px;
+            top: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--bg);
+            border: 2px solid var(--text-dim);
+        }
+        .timeline-item.user .timeline-dot {
+            border-color: var(--green);
+            background: var(--green);
+        }
+        .timeline-item.assistant .timeline-dot {
+            border-color: var(--cyan);
+        }
+        .timeline-item.assistant.complete .timeline-dot {
+            background: var(--cyan);
+        }
+        .timeline-item.generating .timeline-dot {
+            background: var(--cyan);
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .timeline-item.tool .timeline-dot {
+            width: 6px; height: 6px;
+            left: -25px; top: 6px;
+            border-color: var(--yellow);
+            background: var(--yellow);
+        }
+        .timeline-item.error .timeline-dot {
+            border-color: var(--red);
+            background: var(--red);
+        }
+        .timeline-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            font-size: 11px;
+        }
+        .timeline-sender { font-weight: 600; }
+        .timeline-item.user .timeline-sender { color: var(--green); }
+        .timeline-item.assistant .timeline-sender { color: var(--cyan); }
+        .timeline-time { color: var(--text-dim); font-size: 10px; }
+        .elapsed-time { color: var(--text-dim); font-size: 10px; }
+        .elapsed-time.warning { color: var(--yellow); }
+        .timeline-content {
+            background: var(--bg-light);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .timeline-item.user .timeline-content {
+            background: #1a2e1a;
+            border-color: #2d4a2d;
+        }
+        .timeline-item.error .timeline-content {
+            background: #2e1a1a;
+            border-color: #4a2d2d;
+            color: var(--red);
+        }
+        .timeline-item.tool .timeline-content {
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        .timeline-item.tool { padding-bottom: 8px; }
+        .generating-content {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+        }
+        .generating-dots {
+            display: inline-flex;
+            gap: 3px;
+        }
+        .generating-dots span {
+            width: 5px; height: 5px;
+            background: var(--cyan);
+            border-radius: 50%;
+            animation: wave 1.2s ease-in-out infinite;
+        }
+        .generating-dots span:nth-child(2) { animation-delay: 0.15s; }
+        .generating-dots span:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes wave {
+            0%, 60%, 100% { transform: scale(0.6); opacity: 0.4; }
+            30% { transform: scale(1); opacity: 1; }
+        }
+        .tool-action { color: var(--cyan); }
+        /* Code */
+        pre {
+            background: var(--bg);
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+        code {
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 12px;
+        }
+        /* Input */
+        .input-section {
+            padding: 12px;
+            background: var(--bg);
+            border-top: 1px solid var(--border);
+        }
+        .input-wrapper {
+            display: flex;
+            background: var(--bg-lighter);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .input-wrapper:focus-within {
+            border-color: var(--cyan);
+        }
+        .input-section textarea {
+            flex: 1;
+            background: transparent;
+            color: var(--text);
+            border: none;
+            outline: none;
+            font-family: inherit;
+            font-size: 13px;
+            resize: none;
+            min-height: 24px;
+            max-height: 150px;
+        }
+        .input-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .input-actions button {
+            background: transparent;
+            border: none;
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .input-actions button.stop { color: var(--red); }
+        .input-actions button.send { color: var(--green); }
+        .input-actions button:hover { background: var(--border); }
+        /* Auto-approve toggle */
+        .auto-approve-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: var(--bg-light);
+            border-top: 1px solid var(--border);
+            font-size: 11px;
+        }
+        .auto-approve-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            color: var(--text-dim);
+        }
+        .auto-approve-row input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+        .auto-approve-row.active label {
+            color: var(--yellow);
+        }
+        .auto-approve-hint {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <select id="providerSelect" title="AI Provider">
+            <option value="ollama">Ollama</option>
+            <option value="vllm">vLLM</option>
+        </select>
+        <input type="text" id="apiUrl" value="http://localhost:11434" placeholder="API URL">
+        <button id="fetchBtn">Fetch</button>
+        <button id="newBtn">New</button>
+        <button id="historyBtn">History</button>
+    </div>
+    <div class="header model-row">
+        <span class="model-label">AGENT:</span>
+        <select id="agentModel"><option>Loading...</option></select>
+        <span class="model-label">CODER:</span>
+        <select id="coderModel"><option>Optional</option></select>
+    </div>
+    <div class="chat-container" id="chatContainer">
+        <div class="timeline" id="chat">
+            <div class="timeline-item assistant complete">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">LocalAI ready. How can I help?</div>
+            </div>
+        </div>
+    </div>
+    <div class="auto-approve-row" id="autoApproveRow">
+        <label>
+            <input type="checkbox" id="autoApproveToggle">
+            <span>Auto-approve edits</span>
+        </label>
+        <span class="auto-approve-hint">Skip diff review for this session</span>
+    </div>
+    <div class="input-section">
+        <div class="input-wrapper">
+            <textarea id="input" rows="1" placeholder="Ask anything... (Shift+Enter for new line)"></textarea>
+            <div class="input-actions">
+                <button id="stopBtn" class="stop" style="display:none">■</button>
+                <button id="sendBtn" class="send">↵</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const vscode = acquireVsCodeApi();
+        const chat = document.getElementById('chat');
+        const chatContainer = document.getElementById('chatContainer');
+        const input = document.getElementById('input');
+        const stopBtn = document.getElementById('stopBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const agentModel = document.getElementById('agentModel');
+        const coderModel = document.getElementById('coderModel');
+        const providerSelect = document.getElementById('providerSelect');
+        const apiUrl = document.getElementById('apiUrl');
+        const fetchBtn = document.getElementById('fetchBtn');
+        const newBtn = document.getElementById('newBtn');
+        const autoApproveToggle = document.getElementById('autoApproveToggle');
+        const autoApproveRow = document.getElementById('autoApproveRow');
+
+        let currentLine = null;
+        let isResponding = false;
+
+        providerSelect.onchange = () => {
+            const provider = providerSelect.value;
+            if (provider === 'ollama') {
+                apiUrl.value = 'http://localhost:11434';
+            } else if (provider === 'vllm') {
+                apiUrl.value = 'http://localhost:8000';
+            }
+            agentModel.innerHTML = '<option value="">loading...</option>';
+            coderModel.innerHTML = '<option value="">loading...</option>';
+            vscode.postMessage({ command: 'selectProvider', provider: provider });
+        };
+
+        fetchBtn.onclick = () => vscode.postMessage({ command: 'updateApiUrl', url: apiUrl.value.trim() });
+        newBtn.onclick = () => {
+            vscode.postMessage({ command: 'newSession' });
+            chat.innerHTML = '<div class="timeline-item assistant complete"><div class="timeline-dot"></div><div class="timeline-content">New session started.</div></div>';
+            // Reset auto-approve on new session
+            autoApproveToggle.checked = false;
+            autoApproveRow.classList.remove('active');
+            vscode.postMessage({ command: 'setAutoApprove', enabled: false });
+        };
+        autoApproveToggle.onchange = () => {
+            const enabled = autoApproveToggle.checked;
+            autoApproveRow.classList.toggle('active', enabled);
+            vscode.postMessage({ command: 'setAutoApprove', enabled });
+        };
+        stopBtn.onclick = () => vscode.postMessage({ command: 'stopGeneration' });
+        sendBtn.onclick = send;
+        agentModel.onchange = () => vscode.postMessage({ command: 'selectAgentModel', model: agentModel.value });
+        coderModel.onchange = () => vscode.postMessage({ command: 'selectCoderModel', model: coderModel.value });
+
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+        };
+        input.oninput = () => {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+        };
+
+        function send() {
+            const text = input.value.trim();
+            if (!text || isResponding) return;
+            vscode.postMessage({ command: 'sendMessage', text });
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        function addLine(cls, content, isHtml) {
+            const item = document.createElement('div');
+            item.className = 'timeline-item ' + cls + (cls === 'assistant' ? ' complete' : '');
+
+            const dot = document.createElement('div');
+            dot.className = 'timeline-dot';
+
+            if (cls === 'user' || cls === 'assistant' || cls === 'error') {
+                const header = document.createElement('div');
+                header.className = 'timeline-header';
+                const sender = document.createElement('span');
+                sender.className = 'timeline-sender';
+                sender.textContent = cls === 'user' ? 'You' : cls === 'error' ? 'Error' : 'LocalAI';
+                const time = document.createElement('span');
+                time.className = 'timeline-time';
+                time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                header.appendChild(sender);
+                header.appendChild(time);
+                item.appendChild(dot);
+                item.appendChild(header);
+            } else {
+                item.appendChild(dot);
+            }
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'timeline-content';
+            if (isHtml) contentDiv.innerHTML = content;
+            else contentDiv.textContent = content;
+            item.appendChild(contentDiv);
+
+            chat.appendChild(item);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return contentDiv;
+        }
+
+        function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function renderMd(text) {
+            text = text.replace(/\`\`\`(\\w*)\\n?([\\s\\S]*?)\`\`\`/g, (m,l,c) => '<pre><code>' + escapeHtml(c.trim()) + '</code></pre>');
+            text = text.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+            text = text.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+            text = text.replace(/\\n/g, '<br>');
+            return text;
+        }
+
+        window.onmessage = (e) => {
+            const msg = e.data;
+            switch(msg.command) {
+                case 'modelList':
+                    agentModel.innerHTML = msg.models.map(m => '<option value="'+m+'"'+(m===msg.agentModel?' selected':'')+'>'+m+'</option>').join('');
+                    coderModel.innerHTML = '<option value="">None</option>' + msg.models.map(m => '<option value="'+m+'"'+(m===msg.coderModel?' selected':'')+'>'+m+'</option>').join('');
+                    break;
+                case 'addMessage':
+                    addLine(msg.role, msg.content);
+                    break;
+                case 'startResponse':
+                    isResponding = true;
+                    stopBtn.style.display = 'inline';
+
+                    var item = document.createElement('div');
+                    item.className = 'timeline-item assistant generating';
+                    item.id = 'current-response';
+
+                    var dot = document.createElement('div');
+                    dot.className = 'timeline-dot';
+
+                    var header = document.createElement('div');
+                    header.className = 'timeline-header';
+                    header.style.display = 'none';
+                    header.innerHTML = '<span class="timeline-sender">LocalAI</span><span class="timeline-time">' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '</span>';
+
+                    currentLine = document.createElement('div');
+                    currentLine.className = 'timeline-content generating-content';
+                    currentLine._raw = '';
+
+                    item.appendChild(dot);
+                    item.appendChild(header);
+                    item.appendChild(currentLine);
+                    chat.appendChild(item);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    break;
+                case 'appendToken':
+                    if (currentLine) {
+                        if (currentLine.classList.contains('generating-content')) {
+                            currentLine.classList.remove('generating-content');
+                            var container = document.getElementById('current-response');
+                            if (container) {
+                                var hdr = container.querySelector('.timeline-header');
+                                if (hdr) hdr.style.display = 'flex';
+                            }
+                        }
+                        currentLine._raw += msg.token;
+                        currentLine.innerHTML = renderMd(currentLine._raw) + '<span class="generating-dots"><span></span><span></span><span></span></span>';
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                    break;
+                case 'endResponse':
+                    var container = document.getElementById('current-response');
+                    if (currentLine && currentLine._raw && currentLine._raw.trim()) {
+                        currentLine.innerHTML = renderMd(currentLine._raw);
+                        if (container) {
+                            container.classList.remove('generating');
+                            container.classList.add('complete');
+                        }
+                    } else if (container) {
+                        container.remove();
+                    }
+                    if (container) container.removeAttribute('id');
+                    isResponding = false;
+                    stopBtn.style.display = 'none';
+                    currentLine = null;
+                    break;
+                case 'toolCall':
+                    var toolDesc = {'read_file':'📖 Reading','write_file':'📝 Writing','edit_file':'✏️ Editing','list_files':'📁 Listing','search_files':'🔍 Searching','run_terminal_command':'💻 Running'}[msg.name] || '🔧 ' + msg.name;
+                    var detail = msg.params?.path || msg.params?.pattern || msg.params?.command || '';
+                    if (detail.length > 40) detail = detail.substring(0,40) + '...';
+                    addLine('tool', '<span class="tool-action">' + toolDesc + '</span>' + (detail ? ': ' + escapeHtml(detail) : ''), true);
+                    break;
+                case 'toolResult':
+                    break;
+                case 'error':
+                    isResponding = false;
+                    stopBtn.style.display = 'none';
+                    var container = document.getElementById('current-response');
+                    if (container) container.remove();
+                    currentLine = null;
+                    addLine('error', msg.text);
+                    break;
+            }
+        };
+
+        setTimeout(() => vscode.postMessage({ command: 'ready' }), 300);
+    </script>
+</body>
+</html>`;
+    }
+    dispose() {
+        ChatPanel.currentPanel = undefined;
+        this.panel.dispose();
+        while (this.disposables.length) {
+            const d = this.disposables.pop();
+            if (d)
+                d.dispose();
+        }
+    }
+}
+exports.ChatPanel = ChatPanel;
+
+
+/***/ }),
+/* 3 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.OllamaService = void 0;
+const vscode = __importStar(__webpack_require__(1));
+class OllamaService {
+    baseUrl;
+    constructor() {
+        this.baseUrl = this.getBaseUrl();
+    }
+    getBaseUrl() {
+        const config = vscode.workspace.getConfiguration('localai');
+        return config.get('ollamaUrl') || 'http://localhost:11434';
+    }
+    updateBaseUrl() {
+        this.baseUrl = this.getBaseUrl();
+    }
+    setBaseUrl(url) {
+        this.baseUrl = url;
+    }
+    getCurrentUrl() {
+        return this.baseUrl;
+    }
+    async chatWithTools(model, messages, tools, onToken, signal) {
+        const url = `${this.baseUrl}/api/chat`;
+        // Tool kullanımında streaming'i kapat (daha güvenilir tool calling için)
+        const useStreaming = tools.length === 0;
+        const requestBody = {
+            model,
+            messages,
+            tools: tools.length > 0 ? tools : undefined,
+            stream: useStreaming,
+        };
+        console.log('[LocalAI] Chat request:', {
+            url,
+            model,
+            messageCount: messages.length,
+            toolCount: tools.length,
+            toolNames: tools.map(t => t.function.name)
+        });
+        // Retry mekanizması - model yüklenirken 500 hatası alınabilir
+        const maxRetries = 3;
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal,
+                });
+                if (!response.ok) {
+                    // 500 hatası - model yükleniyor olabilir, bekle ve tekrar dene
+                    if (response.status === 500 && attempt < maxRetries) {
+                        console.log(`[LocalAI] 500 error, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+                        continue;
+                    }
+                    throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+                }
+                // Başarılı response - devam et
+                return await this.processResponse(response, useStreaming, onToken);
+            }
+            catch (error) {
+                lastError = error;
+                // Abort hatası - retry yapma
+                if (error instanceof DOMException && error.name === 'AbortError') {
+                    throw error;
+                }
+                // Network hatası veya timeout - retry
+                if (attempt < maxRetries) {
+                    console.log(`[LocalAI] Request failed, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries}):`, error);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 3000));
+                    continue;
+                }
+            }
+        }
+        throw lastError || new Error('Request failed after retries');
+    }
+    async processResponse(response, useStreaming, onToken) {
+        let fullContent = '';
+        let toolCalls = [];
+        if (!useStreaming) {
+            // Non-streaming: tek bir JSON response
+            const json = await response.json();
+            console.log('[LocalAI] Non-streaming response:', JSON.stringify(json, null, 2));
+            if (json.message?.content) {
+                fullContent = json.message.content;
+                onToken?.(json.message.content);
+            }
+            if (json.message?.tool_calls) {
+                console.log('[LocalAI] Tool calls received:', JSON.stringify(json.message.tool_calls));
+                toolCalls = json.message.tool_calls;
+            }
+            // Eğer native tool_calls boşsa, content içinden JSON tool call parse etmeyi dene
+            if (toolCalls.length === 0 && fullContent) {
+                const parsedToolCalls = this.parseToolCallsFromContent(fullContent);
+                if (parsedToolCalls.length > 0) {
+                    console.log('[LocalAI] Parsed tool calls from content:', JSON.stringify(parsedToolCalls));
+                    toolCalls = parsedToolCalls;
+                    // Tool call content'ini temizle (kullanıcıya göstermeye gerek yok)
+                    fullContent = '';
+                }
+            }
+        }
+        else {
+            // Streaming: satır satır JSON
+            if (!response.body) {
+                throw new Error('No response body');
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done)
+                    break;
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n').filter(line => line.trim());
+                for (const line of lines) {
+                    try {
+                        const json = JSON.parse(line);
+                        if (json.message?.content) {
+                            fullContent += json.message.content;
+                            onToken?.(json.message.content);
+                        }
+                        if (json.message?.tool_calls) {
+                            console.log('[LocalAI] Tool calls received:', JSON.stringify(json.message.tool_calls));
+                            toolCalls = json.message.tool_calls;
+                        }
+                    }
+                    catch {
+                        // Skip invalid JSON lines
+                    }
+                }
+            }
+        }
+        console.log('[LocalAI] Chat response:', {
+            contentLength: fullContent.length,
+            toolCallCount: toolCalls.length,
+            toolCalls: toolCalls.map(tc => tc.function?.name)
+        });
+        return { content: fullContent, toolCalls };
+    }
+    async chat(model, messages, onToken) {
+        const result = await this.chatWithTools(model, messages, [], onToken);
+        return result.content;
+    }
+    async listModels() {
+        const url = `${this.baseUrl}/api/tags`;
+        console.log('[LocalAI] Fetching models from:', url);
+        try {
+            const response = await fetch(url);
+            console.log('[LocalAI] Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`Failed to list models: ${response.status}`);
+            }
+            const data = await response.json();
+            console.log('[LocalAI] Models data:', data);
+            return data.models?.map(m => m.name) || [];
+        }
+        catch (err) {
+            console.error('[LocalAI] Fetch error:', err);
+            throw err;
+        }
+    }
+    async isAvailable() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/tags`);
+            return response.ok;
+        }
+        catch {
+            return false;
+        }
+    }
+    // Content içinden JSON tool call'larını parse et
+    // Bazı modeller native tool_calls yerine content içinde JSON döndürüyor
+    parseToolCallsFromContent(content) {
+        const toolCalls = [];
+        // Helper: tek bir tool call objesini parse et
+        const parseToolCall = (obj) => {
+            const name = obj.name;
+            // arguments veya parameters olabilir
+            const args = (obj.arguments || obj.parameters);
+            if (name && args && typeof args === 'object') {
+                return {
+                    function: {
+                        name,
+                        arguments: args
+                    }
+                };
+            }
+            return null;
+        };
+        try {
+            // 1. Markdown code block içindeki JSON'u bul
+            const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (codeBlockMatch) {
+                const parsed = JSON.parse(codeBlockMatch[1].trim());
+                if (Array.isArray(parsed)) {
+                    for (const item of parsed) {
+                        const tc = parseToolCall(item);
+                        if (tc)
+                            toolCalls.push(tc);
+                    }
+                }
+                else {
+                    const tc = parseToolCall(parsed);
+                    if (tc)
+                        toolCalls.push(tc);
+                }
+                if (toolCalls.length > 0)
+                    return toolCalls;
+            }
+            // 2. Content içinde { ile başlayan JSON objesi ara
+            const jsonObjectMatch = content.match(/\{[\s\S]*"name"\s*:\s*"(\w+)"[\s\S]*\}/);
+            if (jsonObjectMatch) {
+                try {
+                    const parsed = JSON.parse(jsonObjectMatch[0]);
+                    const tc = parseToolCall(parsed);
+                    if (tc)
+                        toolCalls.push(tc);
+                    if (toolCalls.length > 0)
+                        return toolCalls;
+                }
+                catch {
+                    // Continue to next method
+                }
+            }
+            // 3. Content'in tamamı JSON olabilir
+            const trimmed = content.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    for (const item of parsed) {
+                        const tc = parseToolCall(item);
+                        if (tc)
+                            toolCalls.push(tc);
+                    }
+                }
+                else {
+                    const tc = parseToolCall(parsed);
+                    if (tc)
+                        toolCalls.push(tc);
+                }
+            }
+        }
+        catch {
+            // JSON parse hatası - tool call yok
+        }
+        return toolCalls;
+    }
+}
+exports.OllamaService = OllamaService;
+
+
+/***/ }),
+/* 4 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.VllmService = void 0;
+const vscode = __importStar(__webpack_require__(1));
+class VllmService {
+    baseUrl;
+    apiKey;
+    timeoutMs;
+    retry;
+    constructor() {
+        this.baseUrl = this.getBaseUrl();
+        this.apiKey = this.getApiKey();
+        this.timeoutMs = this.getTimeoutMs();
+        this.retry = this.getRetryOptions();
+    }
+    /** Re-read settings from VS Code config */
+    updateBaseUrl() {
+        this.baseUrl = this.getBaseUrl();
+        this.apiKey = this.getApiKey();
+        this.timeoutMs = this.getTimeoutMs();
+        this.retry = this.getRetryOptions();
+    }
+    setBaseUrl(url) {
+        this.baseUrl = this.normalizeBaseUrl(url);
+    }
+    getCurrentUrl() {
+        return this.baseUrl;
+    }
+    async isAvailable() {
+        try {
+            const resp = await this.fetchWithRetry(`${this.baseUrl}/v1/models`, { method: 'GET' });
+            return resp.ok;
+        }
+        catch {
+            return false;
+        }
+    }
+    async listModels() {
+        const url = `${this.baseUrl}/v1/models`;
+        console.log('[LocalAI/vLLM] Fetching models from:', url);
+        const resp = await this.fetchWithRetry(url, { method: 'GET' });
+        if (!resp.ok) {
+            const body = await this.safeReadText(resp);
+            throw new Error(`vLLM listModels failed: ${resp.status} ${resp.statusText}${body ? ` | ${body}` : ''}`);
+        }
+        const data = (await resp.json());
+        const models = (data?.data || []).map(m => m.id).filter(Boolean);
+        console.log('[LocalAI/vLLM] Models:', models);
+        return models;
+    }
+    async chat(model, messages, onToken, signal) {
+        const result = await this.chatWithTools(model, messages, [], onToken, signal);
+        return result.content;
+    }
+    /**
+     * Chat with optional OpenAI tool calling.
+     *
+     * NOTE: Your app's internal "tool" messages do not track OpenAI tool_call_id.
+     * For compatibility and to avoid strict servers rejecting tool messages, we
+     * re-encode tool results as user messages.
+     */
+    async chatWithTools(model, messages, tools, onToken, signal) {
+        const url = `${this.baseUrl}/v1/chat/completions`;
+        // Streaming with tools can be flaky across models/servers.
+        // Keep it simple: stream only when no tools.
+        const useStreaming = tools.length === 0;
+        const openaiMessages = this.toOpenAIMessages(messages);
+        const requestBody = {
+            model,
+            messages: openaiMessages,
+            stream: useStreaming,
+        };
+        if (tools.length > 0)
+            requestBody.tools = tools;
+        console.log('[LocalAI/vLLM] Chat request:', {
+            url,
+            model,
+            messageCount: messages.length,
+            toolCount: tools.length,
+            toolNames: tools.map(t => t.function.name),
+            streaming: useStreaming,
+        });
+        const resp = await this.fetchWithRetry(url, {
+            method: 'POST',
+            headers: this.buildHeaders(),
+            body: JSON.stringify(requestBody),
+        }, signal);
+        if (!resp.ok) {
+            const body = await this.safeReadText(resp);
+            throw new Error(`vLLM API error: ${resp.status} ${resp.statusText}${body ? ` | ${body}` : ''}`);
+        }
+        return this.processChatResponse(resp, useStreaming, onToken);
+    }
+    // -----------------------------
+    // Internals
+    // -----------------------------
+    getBaseUrl() {
+        const config = vscode.workspace.getConfiguration('localai');
+        // Prefer localhost for sanity.
+        const configured = config.get('vllmUrl') || 'http://127.0.0.1:8000';
+        return this.normalizeBaseUrl(configured);
+    }
+    getApiKey() {
+        const config = vscode.workspace.getConfiguration('localai');
+        const key = config.get('vllmApiKey');
+        return key && key.trim().length > 0 ? key.trim() : undefined;
+    }
+    getTimeoutMs() {
+        const config = vscode.workspace.getConfiguration('localai');
+        const ms = config.get('vllmTimeoutMs');
+        // default: 2 minutes
+        return typeof ms === 'number' && ms > 0 ? ms : 120_000;
+    }
+    getRetryOptions() {
+        const config = vscode.workspace.getConfiguration('localai');
+        const maxRetries = config.get('vllmMaxRetries');
+        const baseDelayMs = config.get('vllmRetryBaseDelayMs');
+        const maxDelayMs = config.get('vllmRetryMaxDelayMs');
+        return {
+            maxRetries: typeof maxRetries === 'number' && maxRetries >= 0 ? maxRetries : 3,
+            baseDelayMs: typeof baseDelayMs === 'number' && baseDelayMs > 0 ? baseDelayMs : 750,
+            maxDelayMs: typeof maxDelayMs === 'number' && maxDelayMs > 0 ? maxDelayMs : 8_000,
+        };
+    }
+    normalizeBaseUrl(url) {
+        const trimmed = (url || '').trim();
+        if (!trimmed)
+            return 'http://127.0.0.1:8000';
+        // Remove trailing slash
+        return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+    }
+    buildHeaders() {
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (this.apiKey) {
+            // OpenAI-style auth header
+            headers.Authorization = `Bearer ${this.apiKey}`;
+        }
+        return headers;
+    }
+    toOpenAIMessages(messages) {
+        return messages.map((m, idx) => {
+            // Your internal pipeline uses role:'tool' without a tool_call_id.
+            // Some OpenAI servers reject tool messages without tool_call_id.
+            // So we degrade tool results into a user message.
+            if (m.role === 'tool') {
+                return {
+                    role: 'user',
+                    content: `TOOL_RESULT:\n${m.content}`,
+                };
+            }
+            const out = {
+                role: m.role,
+                content: m.content ?? null,
+            };
+            // If you ever store tool_calls on assistant messages, keep them compatible.
+            if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+                out.tool_calls = m.tool_calls.map((tc, tcIndex) => ({
+                    id: `call_${idx}_${tcIndex}`,
+                    type: 'function',
+                    function: {
+                        name: tc.function.name,
+                        arguments: JSON.stringify(tc.function.arguments ?? {}),
+                    },
+                }));
+            }
+            return out;
+        });
+    }
+    async processChatResponse(response, useStreaming, onToken) {
+        let fullContent = '';
+        let toolCalls = [];
+        if (!useStreaming) {
+            const json = (await response.json());
+            const choice = json?.choices?.[0];
+            const msg = choice?.message;
+            if (msg?.content) {
+                fullContent = msg.content;
+                onToken?.(msg.content);
+            }
+            if (msg?.tool_calls && msg.tool_calls.length > 0) {
+                toolCalls = this.convertOpenAIToolCalls(msg.tool_calls);
+            }
+            // Fallback: some models dump tool JSON in content
+            if (toolCalls.length === 0 && fullContent) {
+                const parsed = this.parseToolCallsFromContent(fullContent);
+                if (parsed.length > 0) {
+                    toolCalls = parsed;
+                    fullContent = '';
+                }
+            }
+        }
+        else {
+            if (!response.body)
+                throw new Error('No response body');
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            // Accumulate tool calls (rare in streaming mode here, but supported)
+            const streamingToolCalls = new Map();
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done)
+                    break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    if (!line.startsWith('data:'))
+                        continue;
+                    const payload = line.replace(/^data:\s*/, '');
+                    if (!payload || payload === '[DONE]')
+                        continue;
+                    let chunk = null;
+                    try {
+                        chunk = JSON.parse(payload);
+                    }
+                    catch {
+                        continue;
+                    }
+                    const delta = chunk?.choices?.[0]?.delta;
+                    if (delta?.content) {
+                        fullContent += delta.content;
+                        onToken?.(delta.content);
+                    }
+                    if (delta?.tool_calls) {
+                        for (const tc of delta.tool_calls) {
+                            const existing = streamingToolCalls.get(tc.index) || { name: '', arguments: '' };
+                            if (tc.function?.name)
+                                existing.name = tc.function.name;
+                            if (tc.function?.arguments)
+                                existing.arguments += tc.function.arguments;
+                            streamingToolCalls.set(tc.index, existing);
+                        }
+                    }
+                }
+            }
+            if (streamingToolCalls.size > 0) {
+                for (const [, tc] of streamingToolCalls) {
+                    const args = this.safeJsonParse(tc.arguments);
+                    if (args && typeof args === 'object') {
+                        toolCalls.push({
+                            function: {
+                                name: tc.name,
+                                arguments: args,
+                            },
+                        });
+                    }
+                }
+            }
+        }
+        console.log('[LocalAI/vLLM] Chat response:', {
+            contentLength: fullContent.length,
+            toolCallCount: toolCalls.length,
+            toolCalls: toolCalls.map(tc => tc.function?.name),
+        });
+        return { content: fullContent, toolCalls };
+    }
+    convertOpenAIToolCalls(openaiToolCalls) {
+        const out = [];
+        for (const tc of openaiToolCalls) {
+            const args = this.safeJsonParse(tc.function.arguments) || {};
+            out.push({
+                function: {
+                    name: tc.function.name,
+                    arguments: args,
+                },
+            });
+        }
+        return out;
+    }
+    // Parse JSON tool calls from content (fallback for models without native tool_calls)
+    parseToolCallsFromContent(content) {
+        const toolCalls = [];
+        const parseOne = (obj) => {
+            const name = obj.name;
+            const args = (obj.arguments || obj.parameters);
+            if (name && args && typeof args === 'object') {
+                return { function: { name, arguments: args } };
+            }
+            return null;
+        };
+        try {
+            const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (codeBlockMatch) {
+                const parsed = this.safeJsonParse(codeBlockMatch[1].trim());
+                if (Array.isArray(parsed)) {
+                    for (const item of parsed) {
+                        const tc = parseOne(item);
+                        if (tc)
+                            toolCalls.push(tc);
+                    }
+                }
+                else if (parsed && typeof parsed === 'object') {
+                    const tc = parseOne(parsed);
+                    if (tc)
+                        toolCalls.push(tc);
+                }
+                if (toolCalls.length > 0)
+                    return toolCalls;
+            }
+            const trimmed = content.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                const parsed = this.safeJsonParse(trimmed);
+                if (Array.isArray(parsed)) {
+                    for (const item of parsed) {
+                        const tc = parseOne(item);
+                        if (tc)
+                            toolCalls.push(tc);
+                    }
+                }
+                else if (parsed && typeof parsed === 'object') {
+                    const tc = parseOne(parsed);
+                    if (tc)
+                        toolCalls.push(tc);
+                }
+            }
+        }
+        catch {
+            // ignore
+        }
+        return toolCalls;
+    }
+    safeJsonParse(text) {
+        try {
+            return JSON.parse(text);
+        }
+        catch {
+            return null;
+        }
+    }
+    async safeReadText(resp) {
+        try {
+            return await resp.text();
+        }
+        catch {
+            return '';
+        }
+    }
+    async fetchWithRetry(url, init, externalSignal) {
+        const { maxRetries, baseDelayMs, maxDelayMs } = this.retry;
+        let lastError = null;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+            const signal = this.mergeSignals(externalSignal, controller.signal);
+            try {
+                const resp = await fetch(url, {
+                    ...init,
+                    headers: {
+                        ...init.headers,
+                        ...this.buildHeaders(),
+                    },
+                    signal,
+                });
+                clearTimeout(timeout);
+                // Retry on transient 5xx (common while vLLM is loading a model)
+                if (resp.status >= 500 && resp.status <= 599 && attempt < maxRetries) {
+                    const delay = this.backoffDelay(attempt, baseDelayMs, maxDelayMs);
+                    console.log(`[LocalAI/vLLM] ${resp.status} retry in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+                    await this.sleep(delay);
+                    continue;
+                }
+                return resp;
+            }
+            catch (err) {
+                clearTimeout(timeout);
+                lastError = err;
+                // External abort should stop immediately
+                if (externalSignal?.aborted)
+                    throw err;
+                // AbortError from timeout: retry if allowed
+                const name = err?.name;
+                if (name === 'AbortError' && attempt >= maxRetries)
+                    throw err;
+                if (attempt < maxRetries) {
+                    const delay = this.backoffDelay(attempt, baseDelayMs, maxDelayMs);
+                    console.log(`[LocalAI/vLLM] Request failed, retry in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, err);
+                    await this.sleep(delay);
+                    continue;
+                }
+                throw err;
+            }
+        }
+        // Shouldn't reach
+        throw lastError instanceof Error ? lastError : new Error('vLLM request failed');
+    }
+    backoffDelay(attempt, base, max) {
+        // Exponential backoff with jitter
+        const exp = Math.min(max, Math.floor(base * Math.pow(2, attempt)));
+        const jitter = Math.floor(Math.random() * Math.min(250, exp));
+        return Math.min(max, exp + jitter);
+    }
+    async sleep(ms) {
+        await new Promise(resolve => setTimeout(resolve, ms));
+    }
+    mergeSignals(a, b) {
+        if (!a)
+            return b;
+        if (!b)
+            return a;
+        // If either aborts, abort the merged controller.
+        const controller = new AbortController();
+        const onAbort = () => {
+            try {
+                controller.abort();
+            }
+            catch {
+                // ignore
+            }
+        };
+        if (a.aborted || b.aborted) {
+            onAbort();
+        }
+        else {
+            a.addEventListener('abort', onAbort, { once: true });
+            b.addEventListener('abort', onAbort, { once: true });
+        }
+        return controller.signal;
+    }
+}
+exports.VllmService = VllmService;
+
+
+/***/ }),
+/* 5 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.tools = void 0;
+exports.onPendingEditsChanged = onPendingEditsChanged;
+exports.getPendingEdit = getPendingEdit;
+exports.getPendingEditForFile = getPendingEditForFile;
+exports.clearPendingEdit = clearPendingEdit;
+exports.applyPendingEdit = applyPendingEdit;
+exports.rejectPendingEdit = rejectPendingEdit;
+exports.getAllPendingEdits = getAllPendingEdits;
+exports.applyAllPendingEdits = applyAllPendingEdits;
+exports.rejectAllPendingEdits = rejectAllPendingEdits;
+exports.getPendingEditsCount = getPendingEditsCount;
+exports.getOllamaTools = getOllamaTools;
+exports.getSystemPrompt = getSystemPrompt;
+exports.executeTool = executeTool;
+const vscode = __importStar(__webpack_require__(1));
+const path = __importStar(__webpack_require__(6));
+const fs = __importStar(__webpack_require__(7));
+let pendingEdits = new Map();
+const pendingEditsListeners = [];
+function notifyPendingEditsChanged() {
+    pendingEditsListeners.forEach(listener => listener());
+}
+function onPendingEditsChanged(listener) {
+    pendingEditsListeners.push(listener);
+    return new vscode.Disposable(() => {
+        const index = pendingEditsListeners.indexOf(listener);
+        if (index >= 0) {
+            pendingEditsListeners.splice(index, 1);
+        }
+    });
+}
+function getPendingEdit(id) {
+    return pendingEdits.get(id);
+}
+// Get pending edit by file path (checks temp files too)
+function getPendingEditForFile(filePath) {
+    // Check if this is a temp diff file
+    const tempDir = path.join((__webpack_require__(8).tmpdir)(), 'localai-diff');
+    if (filePath.startsWith(tempDir)) {
+        // Extract edit ID from filename
+        const fileName = path.basename(filePath);
+        const match = fileName.match(/^(edit_\d+_\w+)_/);
+        if (match) {
+            return pendingEdits.get(match[1]);
+        }
+    }
+    // Check if there's a pending edit for this actual file
+    for (const edit of pendingEdits.values()) {
+        if (edit.filePath === filePath) {
+            return edit;
+        }
+    }
+    return undefined;
+}
+function clearPendingEdit(id) {
+    pendingEdits.delete(id);
+    notifyPendingEditsChanged();
+}
+async function applyPendingEdit(id) {
+    const edit = pendingEdits.get(id);
+    if (!edit) {
+        return 'Error: Edit not found or already applied';
+    }
+    try {
+        fs.writeFileSync(edit.filePath, edit.newContent, 'utf-8');
+        const doc = await vscode.workspace.openTextDocument(edit.filePath);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        pendingEdits.delete(id);
+        cleanupTempFiles(id);
+        // Close diff editor tabs
+        await closeDiffEditors(id);
+        notifyPendingEditsChanged();
+        return `✓ Applied changes to ${edit.relativePath}`;
+    }
+    catch (error) {
+        return `Error: ${error instanceof Error ? error.message : 'Could not apply edit'}`;
+    }
+}
+async function rejectPendingEdit(id) {
+    const edit = pendingEdits.get(id);
+    if (!edit) {
+        return 'Edit not found';
+    }
+    pendingEdits.delete(id);
+    cleanupTempFiles(id);
+    // Close diff editor tabs
+    await closeDiffEditors(id);
+    notifyPendingEditsChanged();
+    return `✗ Rejected changes to ${edit.relativePath}`;
+}
+function getAllPendingEdits() {
+    return Array.from(pendingEdits.values());
+}
+async function applyAllPendingEdits() {
+    const edits = getAllPendingEdits();
+    if (edits.length === 0) {
+        return 'No pending edits to apply';
+    }
+    const results = [];
+    for (const edit of edits) {
+        try {
+            fs.writeFileSync(edit.filePath, edit.newContent, 'utf-8');
+            pendingEdits.delete(edit.id);
+            cleanupTempFiles(edit.id);
+            await closeDiffEditors(edit.id);
+            results.push(`✓ ${edit.relativePath}`);
+        }
+        catch (error) {
+            results.push(`✗ ${edit.relativePath}: ${error instanceof Error ? error.message : 'Failed'}`);
+        }
+    }
+    return `Applied ${results.filter(r => r.startsWith('✓')).length}/${edits.length} edits:\n${results.join('\n')}`;
+}
+async function rejectAllPendingEdits() {
+    const edits = getAllPendingEdits();
+    const count = edits.length;
+    for (const edit of edits) {
+        cleanupTempFiles(edit.id);
+        await closeDiffEditors(edit.id);
+    }
+    pendingEdits.clear();
+    return `✗ Rejected ${count} pending edit(s)`;
+}
+function getPendingEditsCount() {
+    return pendingEdits.size;
+}
+// Temp directory for diff files
+const tempDiffDir = path.join((__webpack_require__(8).tmpdir)(), 'localai-diff');
+// Ensure temp dir exists
+function ensureTempDir() {
+    if (!fs.existsSync(tempDiffDir)) {
+        fs.mkdirSync(tempDiffDir, { recursive: true });
+    }
+}
+// Show VSCode native diff editor
+async function showVSCodeDiff(editId, filePath, relativePath, oldContent, newContent) {
+    ensureTempDir();
+    // Create temp files for diff
+    const originalFile = path.join(tempDiffDir, `${editId}_original${path.extname(filePath)}`);
+    const modifiedFile = path.join(tempDiffDir, `${editId}_modified${path.extname(filePath)}`);
+    fs.writeFileSync(originalFile, oldContent, 'utf-8');
+    fs.writeFileSync(modifiedFile, newContent, 'utf-8');
+    const originalUri = vscode.Uri.file(originalFile);
+    const modifiedUri = vscode.Uri.file(modifiedFile);
+    // Open VSCode diff editor
+    await vscode.commands.executeCommand('vscode.diff', originalUri, modifiedUri, `${relativePath} (Proposed Changes - ${editId.slice(-6)})`);
+}
+// Clean up temp files for an edit
+function cleanupTempFiles(editId) {
+    try {
+        const files = fs.readdirSync(tempDiffDir);
+        files.filter(f => f.startsWith(editId)).forEach(f => {
+            fs.unlinkSync(path.join(tempDiffDir, f));
+        });
+    }
+    catch {
+        // Ignore cleanup errors
+    }
+}
+// Close diff editor tabs for a specific edit
+async function closeDiffEditors(editId) {
+    const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
+    for (const tab of tabs) {
+        if (tab.label.includes(editId.slice(-6))) {
+            const tabInput = tab.input;
+            if (tabInput) {
+                await vscode.window.tabGroups.close(tab);
+            }
+        }
+    }
+}
+// Generate simple diff summary for chat display
+function generateDiffSummary(oldText, newText, filePath) {
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    let additions = 0;
+    let deletions = 0;
+    // Count changed lines
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    for (let i = 0; i < maxLen; i++) {
+        if (oldLines[i] !== newLines[i]) {
+            if (oldLines[i] !== undefined)
+                deletions++;
+            if (newLines[i] !== undefined)
+                additions++;
+        }
+    }
+    return `📝 ${filePath}: +${additions} -${deletions} lines`;
+}
+// Parametre normalizasyonu - modeller farklı isimler kullanabilir
+function normalizeParams(params) {
+    const normalized = { ...params };
+    // path alternatifleri
+    if (!normalized.path) {
+        normalized.path = params.file_path || params.filepath || params.file || params.filename || params.name || '';
+    }
+    // content alternatifleri
+    if (!normalized.content) {
+        normalized.content = params.code || params.text || params.data || params.body || '';
+    }
+    // old_text alternatifleri
+    if (!normalized.old_text) {
+        normalized.old_text = params.oldText || params.old || params.find || params.search || params.original || '';
+    }
+    // new_text alternatifleri
+    if (!normalized.new_text) {
+        normalized.new_text = params.newText || params.new || params.replace || params.replacement || '';
+    }
+    // command alternatifleri
+    if (!normalized.command) {
+        normalized.command = params.cmd || params.shell || params.exec || '';
+    }
+    // pattern alternatifleri (search_files için)
+    if (!normalized.pattern) {
+        normalized.pattern = params.query || params.search || params.regex || '';
+    }
+    return normalized;
+}
+exports.tools = [
+    {
+        name: 'read_file',
+        description: 'Read the contents of a file. Use this to understand code before making changes.',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'File path relative to project root'
+                },
+                start_line: {
+                    type: 'string',
+                    description: 'Optional: starting line number (1-indexed)'
+                },
+                end_line: {
+                    type: 'string',
+                    description: 'Optional: ending line number (1-indexed)'
+                }
+            },
+            required: ['path']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.path) {
+                return 'Error: path parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const filePath = path.join(workspaceRoot, params.path);
+            try {
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const lines = content.split('\n');
+                const startLine = params.start_line ? parseInt(params.start_line) - 1 : 0;
+                const endLine = params.end_line ? parseInt(params.end_line) : lines.length;
+                const selectedLines = lines.slice(startLine, endLine);
+                const numberedLines = selectedLines.map((line, i) => `${(startLine + i + 1).toString().padStart(4)}: ${line}`);
+                return `File: ${params.path}\n${'─'.repeat(50)}\n${numberedLines.join('\n')}`;
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Could not read file'}`;
+            }
+        }
+    },
+    {
+        name: 'write_file',
+        description: 'Create a new file or completely overwrite an existing file. Shows diff preview for user approval.',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'File path relative to project root'
+                },
+                content: {
+                    type: 'string',
+                    description: 'Complete file content to write'
+                }
+            },
+            required: ['path', 'content']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.path) {
+                return 'Error: path parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            if (!params.content) {
+                return 'Error: content parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const filePath = path.join(workspaceRoot, params.path);
+            try {
+                const dir = path.dirname(filePath);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+                // Get existing content if file exists
+                const oldContent = fs.existsSync(filePath)
+                    ? fs.readFileSync(filePath, 'utf-8')
+                    : '';
+                const newContent = params.content;
+                // Create pending edit for diff preview
+                const editId = `edit_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+                const pendingEdit = {
+                    id: editId,
+                    filePath,
+                    relativePath: params.path,
+                    oldContent,
+                    newContent,
+                    oldText: oldContent,
+                    newText: newContent,
+                    timestamp: Date.now()
+                };
+                pendingEdits.set(editId, pendingEdit);
+                notifyPendingEditsChanged();
+                // Show VSCode native diff editor
+                await showVSCodeDiff(editId, filePath, params.path, oldContent, newContent);
+                // Return summary for chat
+                const isNewFile = oldContent === '';
+                const summary = isNewFile
+                    ? `📄 New file: ${params.path} (${newContent.split('\n').length} lines)`
+                    : generateDiffSummary(oldContent, newContent, params.path);
+                return `PENDING_EDIT:${editId}\n${summary}\n\n👆 VSCode diff editor açıldı. Değişiklikleri inceleyin.`;
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Could not write file'}`;
+            }
+        }
+    },
+    {
+        name: 'edit_file',
+        description: 'Replace text in a file. Shows diff preview for user approval before applying changes.',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'File path relative to project root'
+                },
+                old_text: {
+                    type: 'string',
+                    description: 'Exact text to find (must match exactly including whitespace)'
+                },
+                new_text: {
+                    type: 'string',
+                    description: 'New text to replace with'
+                }
+            },
+            required: ['path', 'old_text', 'new_text']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.path) {
+                return 'Error: path parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            if (!params.old_text) {
+                return 'Error: old_text parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            if (!params.new_text && params.new_text !== '') {
+                return 'Error: new_text parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const filePath = path.join(workspaceRoot, params.path);
+            // Check if file exists
+            if (!fs.existsSync(filePath)) {
+                const files = fs.readdirSync(workspaceRoot);
+                const suggestions = files.filter(f => f.includes(params.path.replace(/^\.\//, '').split('/').pop() || ''));
+                return `Error: File not found: ${params.path}\n\nFiles in project root:\n${files.slice(0, 20).map(f => '  ' + f).join('\n')}${suggestions.length > 0 ? '\n\nDid you mean: ' + suggestions.join(', ') : ''}`;
+            }
+            try {
+                const content = fs.readFileSync(filePath, 'utf-8');
+                if (!content.includes(params.old_text)) {
+                    const lines = content.split('\n');
+                    const preview = lines.slice(0, 30).map((l, i) => `${i + 1}: ${l}`).join('\n');
+                    return `Error: old_text not found in file.\n\nActual content of ${params.path}:\n${'─'.repeat(40)}\n${preview}${lines.length > 30 ? '\n... (' + (lines.length - 30) + ' more lines)' : ''}\n${'─'.repeat(40)}\n\nCopy the EXACT text you want to replace from above.`;
+                }
+                const newContent = content.replace(params.old_text, params.new_text);
+                // Create pending edit
+                const editId = `edit_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+                const pendingEdit = {
+                    id: editId,
+                    filePath,
+                    relativePath: params.path,
+                    oldContent: content,
+                    newContent,
+                    oldText: params.old_text,
+                    newText: params.new_text,
+                    timestamp: Date.now()
+                };
+                pendingEdits.set(editId, pendingEdit);
+                notifyPendingEditsChanged();
+                // Show VSCode native diff editor
+                await showVSCodeDiff(editId, filePath, params.path, content, newContent);
+                // Return summary for chat
+                const summary = generateDiffSummary(content, newContent, params.path);
+                return `PENDING_EDIT:${editId}\n${summary}\n\n👆 VSCode diff editor açıldı. Değişiklikleri inceleyin.`;
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Could not edit file'}`;
+            }
+        }
+    },
+    {
+        name: 'list_files',
+        description: 'List files and folders in a directory. Use to explore project structure.',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'Directory path relative to project root (use "." for root)'
+                },
+                recursive: {
+                    type: 'string',
+                    description: 'Set to "true" to list recursively (max 3 levels)'
+                }
+            },
+            required: ['path']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const dirPath = path.join(workspaceRoot, params.path || '.');
+            const recursive = params.recursive === 'true';
+            const ignoreDirs = ['node_modules', '.git', 'dist', 'out', '.vscode', '__pycache__', 'venv'];
+            function listDir(dir, prefix = '', depth = 0) {
+                if (depth > 3)
+                    return [];
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                const results = [];
+                for (const entry of entries) {
+                    if (entry.name.startsWith('.') && entry.name !== '.env')
+                        continue;
+                    if (ignoreDirs.includes(entry.name))
+                        continue;
+                    const isDir = entry.isDirectory();
+                    results.push(`${prefix}${isDir ? '📁 ' : '📄 '}${entry.name}`);
+                    if (isDir && recursive) {
+                        const subPath = path.join(dir, entry.name);
+                        results.push(...listDir(subPath, prefix + '  ', depth + 1));
+                    }
+                }
+                return results;
+            }
+            try {
+                const result = listDir(dirPath);
+                return result.length > 0 ? result.join('\n') : 'Empty directory';
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Could not list directory'}`;
+            }
+        }
+    },
+    {
+        name: 'grep',
+        description: 'Search for text/pattern in files. Returns matching lines with file paths and line numbers.',
+        parameters: {
+            type: 'object',
+            properties: {
+                pattern: {
+                    type: 'string',
+                    description: 'Text or regex pattern to search for'
+                },
+                path: {
+                    type: 'string',
+                    description: 'Directory to search in (default: project root)'
+                },
+                file_pattern: {
+                    type: 'string',
+                    description: 'File glob pattern like "*.ts" or "*.py" (default: all files)'
+                }
+            },
+            required: ['pattern']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.pattern) {
+                return 'Error: pattern parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const searchPath = params.path ? path.join(workspaceRoot, params.path) : workspaceRoot;
+            const filePattern = params.file_pattern || '**/*';
+            const results = [];
+            const maxResults = 50;
+            const ignoreDirs = ['node_modules', '.git', 'dist', 'out', '__pycache__'];
+            function searchInDir(dir) {
+                if (results.length >= maxResults)
+                    return;
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (results.length >= maxResults)
+                        break;
+                    if (ignoreDirs.includes(entry.name))
+                        continue;
+                    if (entry.name.startsWith('.'))
+                        continue;
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        searchInDir(fullPath);
+                    }
+                    else if (entry.isFile()) {
+                        // Check file pattern
+                        if (params.file_pattern) {
+                            const ext = params.file_pattern.replace('*', '');
+                            if (!entry.name.endsWith(ext))
+                                continue;
+                        }
+                        try {
+                            const content = fs.readFileSync(fullPath, 'utf-8');
+                            const lines = content.split('\n');
+                            const regex = new RegExp(params.pattern, 'gi');
+                            lines.forEach((line, i) => {
+                                if (results.length >= maxResults)
+                                    return;
+                                if (regex.test(line)) {
+                                    const relPath = path.relative(workspaceRoot, fullPath);
+                                    results.push(`${relPath}:${i + 1}: ${line.trim()}`);
+                                }
+                                regex.lastIndex = 0; // Reset regex
+                            });
+                        }
+                        catch {
+                            // Skip binary files
+                        }
+                    }
+                }
+            }
+            try {
+                searchInDir(searchPath);
+                if (results.length === 0) {
+                    return `No matches found for "${params.pattern}"`;
+                }
+                return `Found ${results.length} match(es):\n${'─'.repeat(50)}\n${results.join('\n')}`;
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Search failed'}`;
+            }
+        }
+    },
+    {
+        name: 'get_selection',
+        description: 'Get the currently selected text in the active editor',
+        parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+        },
+        execute: async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return 'No active editor';
+            }
+            const selection = editor.selection;
+            const selectedText = editor.document.getText(selection);
+            if (!selectedText) {
+                return 'No text selected';
+            }
+            const fileName = path.basename(editor.document.fileName);
+            const startLine = selection.start.line + 1;
+            const endLine = selection.end.line + 1;
+            return `Selected text from ${fileName} (lines ${startLine}-${endLine}):\n${'─'.repeat(50)}\n${selectedText}`;
+        }
+    },
+    {
+        name: 'get_open_file',
+        description: 'Get the full content of the currently open file in editor',
+        parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+        },
+        execute: async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return 'No file is open';
+            }
+            const fileName = path.basename(editor.document.fileName);
+            const content = editor.document.getText();
+            const lines = content.split('\n');
+            const numberedLines = lines.map((line, i) => `${(i + 1).toString().padStart(4)}: ${line}`);
+            return `File: ${fileName}\n${'─'.repeat(50)}\n${numberedLines.join('\n')}`;
+        }
+    },
+    {
+        name: 'run_terminal_command',
+        description: 'Run a shell command. Use for npm, git, build commands etc.',
+        parameters: {
+            type: 'object',
+            properties: {
+                command: {
+                    type: 'string',
+                    description: 'Shell command to run'
+                }
+            },
+            required: ['command']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.command) {
+                return 'Error: command parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            return new Promise((resolve) => {
+                const { exec } = __webpack_require__(9);
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+                exec(params.command, { cwd: workspaceRoot, timeout: 30000 }, (error, stdout, stderr) => {
+                    if (error) {
+                        resolve(`Error: ${error.message}\n${stderr}`);
+                    }
+                    else {
+                        const output = stdout || stderr || 'Command completed (no output)';
+                        resolve(`$ ${params.command}\n${'─'.repeat(50)}\n${output}`);
+                    }
+                });
+            });
+        }
+    },
+    {
+        name: 'show_diff',
+        description: 'Show a diff preview of changes without applying them',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'File path'
+                },
+                new_content: {
+                    type: 'string',
+                    description: 'Proposed new content'
+                }
+            },
+            required: ['path', 'new_content']
+        },
+        execute: async (rawParams) => {
+            const params = normalizeParams(rawParams);
+            if (!params.path) {
+                return 'Error: path parameter is required. Received: ' + JSON.stringify(rawParams);
+            }
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                return 'Error: No workspace folder open';
+            }
+            const filePath = path.join(workspaceRoot, params.path);
+            try {
+                const oldContent = fs.existsSync(filePath)
+                    ? fs.readFileSync(filePath, 'utf-8')
+                    : '';
+                const oldLines = oldContent.split('\n');
+                const newLines = (params.new_content || '').split('\n');
+                const diff = [`Diff for ${params.path}:`, '─'.repeat(50)];
+                const maxLines = Math.max(oldLines.length, newLines.length);
+                for (let i = 0; i < maxLines; i++) {
+                    const oldLine = oldLines[i] || '';
+                    const newLine = newLines[i] || '';
+                    if (oldLine !== newLine) {
+                        if (oldLines[i] !== undefined) {
+                            diff.push(`- ${i + 1}: ${oldLine}`);
+                        }
+                        if (newLines[i] !== undefined) {
+                            diff.push(`+ ${i + 1}: ${newLine}`);
+                        }
+                    }
+                }
+                return diff.join('\n');
+            }
+            catch (error) {
+                return `Error: ${error instanceof Error ? error.message : 'Could not generate diff'}`;
+            }
+        }
+    }
+];
+// Convert to Ollama tool format
+function getOllamaTools() {
+    return exports.tools.map(t => ({
+        type: 'function',
+        function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+        }
+    }));
+}
+// System prompt for tool-enabled chat
+function getSystemPrompt() {
+    return `Sen bir kod yazma asistanısın. Kullanıcının istediği uygulamayı TAMAMEN oluşturmalısın.
+
+## DAVRANIŞIN:
+1. Kullanıcı bir şey istediğinde, HEMEN tool kullanarak dosya oluştur
+2. Yarıda bırakma - tüm dosyaları oluşturana kadar devam et
+3. Geri bildirim bekleme - dosyaları oluştur ve devam et
+4. Her zaman write_file tool'unu kullan, sadece açıklama yazma
+
+## TOOL KULLANIMI:
+
+### Yeni dosya oluşturmak için:
+write_file tool'unu çağır:
+- path: dosya yolu (örn: "src/App.tsx")
+- content: dosyanın tam içeriği
+
+### Var olan dosyayı düzenlemek için:
+1. ÖNCE read_file ile dosyayı oku
+2. SONRA edit_file ile değiştir (old_text birebir aynı olmalı)
+
+### Proje yapısını görmek için:
+list_files tool'unu kullan
+
+### Komut çalıştırmak için:
+run_terminal_command tool'unu kullan
+
+## ÖNEMLİ:
+- Her istekte EN AZ BİR tool çağır
+- Sadece metin yazma, tool kullan!
+- Dosya oluşturmak için write_file KULLANMALISIN
+
+## ÖRNEK:
+Kullanıcı: "React todo app yap"
+
+Yapman gereken:
+1. write_file(path="src/App.jsx", content="import React...")
+2. write_file(path="src/components/TodoList.jsx", content="...")
+3. write_file(path="src/App.css", content="...")
+
+SADECE METİN YAZMA - TOOL KULLAN!`;
+}
+async function executeTool(name, params) {
+    const tool = exports.tools.find(t => t.name === name);
+    if (!tool) {
+        return `Unknown tool: ${name}`;
+    }
+    return await tool.execute(params);
+}
+
+
+/***/ }),
+/* 6 */
+/***/ ((module) => {
+
+module.exports = require("path");
+
+/***/ }),
+/* 7 */
+/***/ ((module) => {
+
+module.exports = require("fs");
+
+/***/ }),
+/* 8 */
+/***/ ((module) => {
+
+module.exports = require("os");
+
+/***/ }),
+/* 9 */
+/***/ ((module) => {
+
+module.exports = require("child_process");
+
+/***/ }),
+/* 10 */
+/***/ ((__unused_webpack_module, exports) => {
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.MemoryService = void 0;
+const CHAT_HISTORY_KEY = 'localai.chatHistory';
+const CURRENT_SESSION_KEY = 'localai.currentSession';
+const PROJECT_MEMORY_KEY = 'localai.projectMemory';
+class MemoryService {
+    context;
+    currentSession = null;
+    constructor(context) {
+        this.context = context;
+    }
+    // ========== Chat Sessions ==========
+    async createNewSession(model) {
+        const session = {
+            id: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            title: 'New Chat',
+            messages: [],
+            model,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+        this.currentSession = session;
+        await this.saveCurrentSessionId(session.id);
+        return session;
+    }
+    getCurrentSession() {
+        return this.currentSession;
+    }
+    async loadCurrentSession() {
+        const sessionId = this.context.workspaceState.get(CURRENT_SESSION_KEY);
+        if (!sessionId)
+            return null;
+        const sessions = await this.getAllSessions();
+        const session = sessions.find(s => s.id === sessionId);
+        if (session) {
+            this.currentSession = session;
+        }
+        return session || null;
+    }
+    async saveSession(session) {
+        session.updatedAt = Date.now();
+        // Auto-generate title from first user message
+        if (session.title === 'New Chat' && session.messages.length > 0) {
+            const firstUserMsg = session.messages.find(m => m.role === 'user');
+            if (firstUserMsg) {
+                session.title = firstUserMsg.content.substring(0, 40) + (firstUserMsg.content.length > 40 ? '...' : '');
+            }
+        }
+        const sessions = await this.getAllSessions();
+        const existingIndex = sessions.findIndex(s => s.id === session.id);
+        if (existingIndex >= 0) {
+            sessions[existingIndex] = session;
+        }
+        else {
+            sessions.unshift(session);
+        }
+        // Keep only last 50 sessions
+        const trimmedSessions = sessions.slice(0, 50);
+        await this.context.workspaceState.update(CHAT_HISTORY_KEY, trimmedSessions);
+        this.currentSession = session;
+    }
+    async getAllSessions() {
+        return this.context.workspaceState.get(CHAT_HISTORY_KEY) || [];
+    }
+    async deleteSession(sessionId) {
+        const sessions = await this.getAllSessions();
+        const filtered = sessions.filter(s => s.id !== sessionId);
+        await this.context.workspaceState.update(CHAT_HISTORY_KEY, filtered);
+        if (this.currentSession?.id === sessionId) {
+            this.currentSession = null;
+            await this.context.workspaceState.update(CURRENT_SESSION_KEY, undefined);
+        }
+    }
+    async clearAllSessions() {
+        await this.context.workspaceState.update(CHAT_HISTORY_KEY, []);
+        await this.context.workspaceState.update(CURRENT_SESSION_KEY, undefined);
+        this.currentSession = null;
+    }
+    async saveCurrentSessionId(sessionId) {
+        await this.context.workspaceState.update(CURRENT_SESSION_KEY, sessionId);
+    }
+    // ========== Messages ==========
+    async addMessage(message) {
+        if (!this.currentSession)
+            return;
+        this.currentSession.messages.push(message);
+        await this.saveSession(this.currentSession);
+    }
+    async getMessages() {
+        return this.currentSession?.messages || [];
+    }
+    async clearCurrentMessages() {
+        if (this.currentSession) {
+            this.currentSession.messages = [];
+            await this.saveSession(this.currentSession);
+        }
+    }
+    // ========== Project Memory ==========
+    async getProjectMemory() {
+        const data = this.context.workspaceState.get(PROJECT_MEMORY_KEY);
+        if (!data)
+            return null;
+        return {
+            knownFiles: new Map(Object.entries(data.knownFiles || {})),
+            projectNotes: data.projectNotes || '',
+            commonCommands: data.commonCommands || [],
+            updatedAt: data.updatedAt || Date.now()
+        };
+    }
+    async saveProjectMemory(memory) {
+        const data = {
+            knownFiles: Object.fromEntries(memory.knownFiles),
+            projectNotes: memory.projectNotes,
+            commonCommands: memory.commonCommands,
+            updatedAt: Date.now()
+        };
+        await this.context.workspaceState.update(PROJECT_MEMORY_KEY, data);
+    }
+    async addFileNote(filePath, note) {
+        let memory = await this.getProjectMemory();
+        if (!memory) {
+            memory = {
+                knownFiles: new Map(),
+                projectNotes: '',
+                commonCommands: [],
+                updatedAt: Date.now()
+            };
+        }
+        memory.knownFiles.set(filePath, note);
+        await this.saveProjectMemory(memory);
+    }
+    async setProjectNotes(notes) {
+        let memory = await this.getProjectMemory();
+        if (!memory) {
+            memory = {
+                knownFiles: new Map(),
+                projectNotes: '',
+                commonCommands: [],
+                updatedAt: Date.now()
+            };
+        }
+        memory.projectNotes = notes;
+        await this.saveProjectMemory(memory);
+    }
+    async addCommonCommand(command) {
+        let memory = await this.getProjectMemory();
+        if (!memory) {
+            memory = {
+                knownFiles: new Map(),
+                projectNotes: '',
+                commonCommands: [],
+                updatedAt: Date.now()
+            };
+        }
+        if (!memory.commonCommands.includes(command)) {
+            memory.commonCommands.unshift(command);
+            memory.commonCommands = memory.commonCommands.slice(0, 20);
+            await this.saveProjectMemory(memory);
+        }
+    }
+    // ========== Context for LLM ==========
+    async getContextSummary() {
+        const memory = await this.getProjectMemory();
+        if (!memory)
+            return '';
+        const parts = [];
+        if (memory.projectNotes) {
+            parts.push(`## Project Notes\n${memory.projectNotes}`);
+        }
+        if (memory.knownFiles.size > 0) {
+            const files = Array.from(memory.knownFiles.entries())
+                .map(([path, note]) => `- ${path}: ${note}`)
+                .join('\n');
+            parts.push(`## Known Files\n${files}`);
+        }
+        if (memory.commonCommands.length > 0) {
+            parts.push(`## Common Commands\n${memory.commonCommands.join(', ')}`);
+        }
+        return parts.length > 0 ? parts.join('\n\n') : '';
+    }
+    // ========== Export/Import ==========
+    async exportHistory() {
+        const sessions = await this.getAllSessions();
+        const memory = await this.getProjectMemory();
+        const exportData = {
+            exportedAt: new Date().toISOString(),
+            sessions,
+            projectMemory: memory ? {
+                knownFiles: Object.fromEntries(memory.knownFiles),
+                projectNotes: memory.projectNotes,
+                commonCommands: memory.commonCommands
+            } : null
+        };
+        return JSON.stringify(exportData, null, 2);
+    }
+    async importHistory(jsonData) {
+        try {
+            const data = JSON.parse(jsonData);
+            if (data.sessions && Array.isArray(data.sessions)) {
+                await this.context.workspaceState.update(CHAT_HISTORY_KEY, data.sessions);
+            }
+            if (data.projectMemory) {
+                const memory = {
+                    knownFiles: new Map(Object.entries(data.projectMemory.knownFiles || {})),
+                    projectNotes: data.projectMemory.projectNotes || '',
+                    commonCommands: data.projectMemory.commonCommands || [],
+                    updatedAt: Date.now()
+                };
+                await this.saveProjectMemory(memory);
+            }
+            return { sessions: data.sessions?.length || 0, success: true };
+        }
+        catch {
+            return { sessions: 0, success: false };
+        }
+    }
+}
+exports.MemoryService = MemoryService;
+
+
+/***/ })
+/******/ 	]);
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __webpack_require__(0);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
+/******/ })()
+;
+//# sourceMappingURL=extension.js.map

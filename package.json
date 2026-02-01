@@ -58,6 +58,11 @@
           "default": "http://localhost:11434",
           "description": "Ollama API URL"
         },
+        "localai.vllmUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "vLLM API URL (OpenAI-compatible endpoint)"
+        },
         "localai.defaultModel": {
           "type": "string",
           "default": "llama3.2",

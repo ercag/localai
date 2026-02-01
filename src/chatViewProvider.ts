@@ -1,13 +1,27 @@
 import * as vscode from 'vscode';
-import { OllamaService, OllamaMessage } from './ollama';
+import { OllamaService, OllamaMessage, ToolCall, OllamaTool } from './ollama';
+import { VllmService } from './vllmService';
 import { getOllamaTools, getSystemPrompt, executeTool, applyPendingEdit, rejectPendingEdit, applyAllPendingEdits, rejectAllPendingEdits, getPendingEditsCount, onPendingEditsChanged } from './tools';
 import { MemoryService, ChatSession } from './memory';
 import { showGeneratingStatus, updateGeneratingStatus, hideGeneratingStatus, showReadyStatus } from './extension';
+
+export type ProviderType = 'ollama' | 'vllm';
+
+interface AIProvider {
+    chatWithTools(model: string, messages: OllamaMessage[], tools: OllamaTool[], onToken?: (token: string) => void, signal?: AbortSignal): Promise<{ content: string; toolCalls: ToolCall[] }>;
+    chat(model: string, messages: OllamaMessage[], onToken?: (token: string) => void): Promise<string>;
+    listModels(): Promise<string[]>;
+    isAvailable(): Promise<boolean>;
+    setBaseUrl(url: string): void;
+    getCurrentUrl(): string;
+}
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'localai.chatView';
     private view?: vscode.WebviewView;
     private ollama: OllamaService;
+    private vllm: VllmService;
+    private currentProvider: ProviderType = 'ollama';
     private messages: OllamaMessage[] = [];
     private agentModel: string = '';  // Tool calling için (llama3.1 gibi)
     private coderModel: string = '';  // Kod üretimi için (qwen2.5 gibi)
@@ -19,6 +33,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     constructor(private readonly extensionUri: vscode.Uri, memoryService: MemoryService) {
         this.ollama = new OllamaService();
+        this.vllm = new VllmService();
         this.memory = memoryService;
 
         // Pending edit değişikliklerini dinle (VSCode toolbar'dan onay için)
@@ -65,12 +80,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 case 'selectCoderModel':
                     this.coderModel = message.model;
                     break;
+                case 'selectProvider':
+                    this.currentProvider = message.provider as ProviderType;
+
+                    // Reset models so sendModelList() will pick correct defaults for new provider
+                    this.agentModel = '';
+                    this.coderModel = '';
+
+                    console.log('[LocalAI] Provider changed to:', this.currentProvider);
+                    await this.sendModelList();
+                    break;
                 case 'getModels':
                     await this.sendModelList();
                     break;
                 case 'updateApiUrl':
                     console.log('[LocalAI] updateApiUrl:', message.url);
-                    this.ollama.setBaseUrl(message.url);
+                    this.getActiveProvider().setBaseUrl(message.url);
                     await this.sendModelList();
                     break;
                 case 'clearChat':
@@ -460,11 +485,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private getActiveProvider(): AIProvider {
+        return this.currentProvider === 'vllm' ? this.vllm : this.ollama;
+    }
+
     private async sendModelList(): Promise<void> {
         if (!this.view) return;
-        console.log('[LocalAI] sendModelList called, URL:', this.ollama.getCurrentUrl());
+        const provider = this.getActiveProvider();
+        console.log('[LocalAI] sendModelList called, provider:', this.currentProvider, 'URL:', provider.getCurrentUrl());
         try {
-            const models = await this.ollama.listModels();
+            const models = await provider.listModels();
             console.log('[LocalAI] Models received:', models);
 
             // Agent model için otomatik seçim (tool capable modelleri tercih et)
@@ -484,23 +514,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 command: 'modelList',
                 models,
                 agentModel: this.agentModel,
-                coderModel: this.coderModel
+                coderModel: this.coderModel,
+                provider: this.currentProvider
             });
             if (models.length === 0) {
+                const hint = this.currentProvider === 'ollama'
+                    ? 'No models found. Run: ollama pull llama3.1:8b'
+                    : 'No models found on vLLM server.';
                 this.view.webview.postMessage({
                     command: 'error',
-                    text: 'No models found. Run: ollama pull llama3.1:8b'
+                    text: hint
                 });
             }
         } catch (error) {
             console.error('[LocalAI] Error fetching models:', error);
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            let userMessage = 'Ollama connection failed';
+            let userMessage = this.currentProvider === 'ollama' ? 'Ollama connection failed' : 'vLLM connection failed';
 
             if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch')) {
-                userMessage = 'Cannot connect to Ollama. Is it running? (ollama serve)';
+                userMessage = this.currentProvider === 'ollama'
+                    ? 'Cannot connect to Ollama. Is it running? (ollama serve)'
+                    : 'Cannot connect to vLLM. Is the server running?';
             } else if (errorMsg.includes('404')) {
-                userMessage = 'Ollama API not found. Check the URL.';
+                userMessage = `${this.currentProvider.toUpperCase()} API not found. Check the URL.`;
             } else {
                 userMessage = `Connection error: ${errorMsg}`;
             }
@@ -605,9 +641,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             ];
 
             const tools = getOllamaTools();
+            const provider = this.getActiveProvider();
 
             // Agent model ile tool calling yap
-            const { content, toolCalls } = await this.ollama.chatWithTools(
+            const { content, toolCalls } = await provider.chatWithTools(
                 activeAgentModel,
                 messagesWithSystem,
                 tools,
@@ -795,7 +832,7 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
                 return null;
             }
 
-            const codeResult = await this.ollama.chatWithTools(
+            const codeResult = await this.getActiveProvider().chatWithTools(
                 this.coderModel,
                 [{ role: 'user', content: coderPrompt }],
                 [],  // No tools for code generation
@@ -1603,6 +1640,10 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
 </head>
 <body>
     <div class="config-section">
+        <select id="providerSelect" title="AI Provider">
+            <option value="ollama">Ollama</option>
+            <option value="vllm">vLLM</option>
+        </select>
         <input type="text" id="apiUrl" placeholder="http://localhost:11434" value="http://localhost:11434">
         <button id="fetchBtn">fetch</button>
         <button id="newBtn">new</button>
@@ -1665,6 +1706,7 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         const stopBtn = document.getElementById('stopBtn');
         const agentModelSelect = document.getElementById('agentModelSelect');
         const coderModelSelect = document.getElementById('coderModelSelect');
+        const providerSelect = document.getElementById('providerSelect');
         const apiUrl = document.getElementById('apiUrl');
         const fetchBtn = document.getElementById('fetchBtn');
         const newBtn = document.getElementById('newBtn');
@@ -1751,6 +1793,20 @@ Provide ONLY the complete file content. Do not include explanations or markdown 
         coderModelSelect.onchange = () => {
             vscode.postMessage({ command: 'selectCoderModel', model: coderModelSelect.value });
             updateToolStatus();
+        };
+
+        providerSelect.onchange = () => {
+            const provider = providerSelect.value;
+            // URL'i provider'a göre güncelle
+            if (provider === 'ollama') {
+                apiUrl.value = 'http://localhost:11434';
+            } else if (provider === 'vllm') {
+                apiUrl.value = 'http://localhost:8000';
+            }
+            // Model listelerini temizle
+            agentModelSelect.innerHTML = '<option value="">loading...</option>';
+            coderModelSelect.innerHTML = '<option value="">loading...</option>';
+            vscode.postMessage({ command: 'selectProvider', provider: provider });
         };
 
         fetchBtn.onclick = () => {
