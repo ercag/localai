@@ -313,7 +313,17 @@ export const tools: Tool[] = [
                     `${(startLine + i + 1).toString().padStart(4)}: ${line}`
                 );
 
-                return `File: ${params.path}\n${'─'.repeat(50)}\n${numberedLines.join('\n')}`;
+                // Eğer dosya çok uzunsa (100+ satır), ortasını kes
+                const MAX_LINES = 100;
+                let result = numberedLines.join('\n');
+                if (numberedLines.length > MAX_LINES) {
+                    const topLines = numberedLines.slice(0, 50).join('\n');
+                    const bottomLines = numberedLines.slice(-50).join('\n');
+                    result = `${topLines}\n... [${numberedLines.length - MAX_LINES} lines omitted] ...\n${bottomLines}`;
+                }
+
+                // Hatırlatma ekle
+                return `File: ${params.path}\n${'─'.repeat(50)}\n${result}\n${'─'.repeat(50)}\nYou have read the file. Now USE edit_file to fix the issue. DO NOT read again.`;
             } catch (error) {
                 return `Error: ${error instanceof Error ? error.message : 'Could not read file'}`;
             }
@@ -355,11 +365,18 @@ export const tools: Tool[] = [
                     fs.mkdirSync(dir, { recursive: true });
                 }
 
+                const newContent = params.content;
+
+                // Auto-approve modunda direkt yaz
+                if (params._skipDiff === 'true') {
+                    fs.writeFileSync(filePath, newContent, 'utf-8');
+                    return `✓ ${params.path} yazıldı (${newContent.split('\n').length} satır)`;
+                }
+
                 // Get existing content if file exists
                 const oldContent = fs.existsSync(filePath)
                     ? fs.readFileSync(filePath, 'utf-8')
                     : '';
-                const newContent = params.content;
 
                 // Create pending edit for diff preview
                 const editId = `edit_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -445,6 +462,13 @@ export const tools: Tool[] = [
                 }
 
                 const newContent = content.replace(params.old_text, params.new_text);
+
+                // Auto-approve modunda direkt yaz
+                if (params._skipDiff === 'true') {
+                    fs.writeFileSync(filePath, newContent, 'utf-8');
+                    const changedLines = params.new_text.split('\n').length;
+                    return `✓ ${params.path} düzenlendi (~${changedLines} satır değişti)`;
+                }
 
                 // Create pending edit
                 const editId = `edit_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -778,51 +802,61 @@ export function getOllamaTools(): OllamaTool[] {
 
 // System prompt for tool-enabled chat
 export function getSystemPrompt(): string {
-    return `Sen bir kod yazma asistanısın. Kullanıcının istediği uygulamayı TAMAMEN oluşturmalısın.
+    return `You have access to tools for file operations. Use them efficiently.
 
-## DAVRANIŞIN:
-1. Kullanıcı bir şey istediğinde, HEMEN tool kullanarak dosya oluştur
-2. Yarıda bırakma - tüm dosyaları oluşturana kadar devam et
-3. Geri bildirim bekleme - dosyaları oluştur ve devam et
-4. Her zaman write_file tool'unu kullan, sadece açıklama yazma
+Available tools and when to use them:
 
-## TOOL KULLANIMI:
+read_file(path, start_line?, end_line?)
+- Read file content before editing
+- Use start_line/end_line to read specific sections
+- Read ONCE per file, then act
 
-### Yeni dosya oluşturmak için:
-write_file tool'unu çağır:
-- path: dosya yolu (örn: "src/App.tsx")
-- content: dosyanın tam içeriği
+write_file(path, content)
+- Create new file or overwrite existing file
+- Include complete file content
 
-### Var olan dosyayı düzenlemek için:
-1. ÖNCE read_file ile dosyayı oku
-2. SONRA edit_file ile değiştir (old_text birebir aynı olmalı)
+edit_file(path, old_text, new_text)
+- Modify existing file
+- old_text must match EXACTLY (including whitespace)
+- Read the file first to get exact text
 
-### Proje yapısını görmek için:
-list_files tool'unu kullan
+list_files(path, recursive?)
+- See directory contents
+- Use recursive=true for nested listing
 
-### Komut çalıştırmak için:
-run_terminal_command tool'unu kullan
+grep(pattern, path?, file_pattern?)
+- Search text across files
+- Use when file location is unknown
 
-## ÖNEMLİ:
-- Her istekte EN AZ BİR tool çağır
-- Sadece metin yazma, tool kullan!
-- Dosya oluşturmak için write_file KULLANMALISIN
+run_terminal_command(command)
+- Run shell commands (npm, git, etc)
 
-## ÖRNEK:
-Kullanıcı: "React todo app yap"
+get_selection()
+- Get currently selected text in editor
 
-Yapman gereken:
-1. write_file(path="src/App.jsx", content="import React...")
-2. write_file(path="src/components/TodoList.jsx", content="...")
-3. write_file(path="src/App.css", content="...")
+get_open_file()
+- Get content of file open in editor
 
-SADECE METİN YAZMA - TOOL KULLAN!`;
+Best practices:
+- Read once, act immediately
+- Don't repeat the same tool call
+- Trust user's information (file paths, line numbers)
+- Minimum tool calls for maximum efficiency
+- If user says "fix X in file.ts", just read file.ts and edit it - don't search or overthink
+
+CRITICAL RULE:
+After reading a file with an error, your NEXT tool call MUST be edit_file to fix it.
+DO NOT search, grep, or read other files. FIX THE ERROR IMMEDIATELY.`;
 }
 
-export async function executeTool(name: string, params: Record<string, string>): Promise<string> {
+export async function executeTool(name: string, params: Record<string, string>, options?: { autoApprove?: boolean }): Promise<string> {
     const tool = tools.find(t => t.name === name);
     if (!tool) {
         return `Unknown tool: ${name}`;
+    }
+    // Auto-approve modunda write_file/edit_file için diff gösterme
+    if (options?.autoApprove && ['write_file', 'edit_file'].includes(name)) {
+        return await tool.execute({ ...params, _skipDiff: 'true' });
     }
     return await tool.execute(params);
 }

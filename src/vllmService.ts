@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { OllamaMessage, ToolCall, OllamaTool } from './ollama';
+import { log } from './chatPanel';
 
 /**
  * vLLM OpenAI-compatible client.
@@ -495,6 +496,7 @@ export class VllmService {
 
             const signal = this.mergeSignals(externalSignal, controller.signal);
             try {
+                const fetchStartTime = Date.now();
                 const resp = await fetch(url, {
                     ...init,
                     headers: {
@@ -503,6 +505,15 @@ export class VllmService {
                     },
                     signal,
                 });
+
+                const networkLatency = Date.now() - fetchStartTime;
+                console.log(`[LocalAI/vLLM] Network request completed in ${networkLatency}ms (status: ${resp.status})`);
+
+                // Cloudflare detection
+                const cfRay = resp.headers.get('cf-ray');
+                if (cfRay) {
+                    console.log(`[LocalAI/vLLM] ⚠️  Cloudflare detected (cf-ray: ${cfRay}) - this may add latency`);
+                }
 
                 clearTimeout(timeout);
 

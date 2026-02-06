@@ -4,7 +4,9 @@
       "Bash(node:*)",
       "Bash(ollama list:*)",
       "Bash(tasklist:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(npm run compile:*)",
+      "Bash(npm install)"
     ]
   }
 }

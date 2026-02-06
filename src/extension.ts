@@ -9,8 +9,14 @@ let statusBarItem: vscode.StatusBarItem;
 // Memory service (shared with ChatPanel)
 let memoryService: MemoryService;
 
+// Output channel for logging
+export let outputChannel: vscode.OutputChannel;
+
 export function activate(context: vscode.ExtensionContext) {
-	console.log('LocalAI extension is now active!');
+	// Create output channel
+	outputChannel = vscode.window.createOutputChannel('LocalAI');
+	context.subscriptions.push(outputChannel);
+	outputChannel.appendLine('LocalAI extension activated');
 
 	// Create status bar item
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);

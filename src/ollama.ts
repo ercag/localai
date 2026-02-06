@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { log } from './chatPanel';
 
 export interface OllamaMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
@@ -78,13 +79,7 @@ export class OllamaService {
             stream: useStreaming,
         };
 
-        console.log('[LocalAI] Chat request:', {
-            url,
-            model,
-            messageCount: messages.length,
-            toolCount: tools.length,
-            toolNames: tools.map(t => t.function.name)
-        });
+        log(`[LocalAI] Chat request: ${model}, ${messages.length} messages, ${tools.length} tools`);
 
         // Retry mekanizması - model yüklenirken 500 hatası alınabilir
         const maxRetries = 3;
@@ -92,6 +87,7 @@ export class OllamaService {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                const fetchStartTime = Date.now();
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: {
@@ -101,10 +97,19 @@ export class OllamaService {
                     signal,
                 });
 
+                const networkLatency = Date.now() - fetchStartTime;
+                log(`[LocalAI] Network request completed in ${networkLatency}ms (status: ${response.status})`);
+
+                // Cloudflare detection
+                const cfRay = response.headers.get('cf-ray');
+                if (cfRay) {
+                    log(`[LocalAI] ⚠️  Cloudflare detected (cf-ray: ${cfRay}) - this may add latency`);
+                }
+
                 if (!response.ok) {
                     // 500 hatası - model yükleniyor olabilir, bekle ve tekrar dene
                     if (response.status === 500 && attempt < maxRetries) {
-                        console.log(`[LocalAI] 500 error, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries})`);
+                        log(`[LocalAI] 500 error, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, attempt * 3000));
                         continue;
                     }
@@ -123,7 +128,7 @@ export class OllamaService {
 
                 // Network hatası veya timeout - retry
                 if (attempt < maxRetries) {
-                    console.log(`[LocalAI] Request failed, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries}):`, error);
+                    log(`[LocalAI] Request failed, retrying in ${attempt * 3}s... (attempt ${attempt}/${maxRetries})`);
                     await new Promise(resolve => setTimeout(resolve, attempt * 3000));
                     continue;
                 }
@@ -145,14 +150,14 @@ export class OllamaService {
         if (!useStreaming) {
             // Non-streaming: tek bir JSON response
             const json = await response.json() as OllamaChatResponse;
-            console.log('[LocalAI] Non-streaming response:', JSON.stringify(json, null, 2));
+            log(`[LocalAI] Non-streaming response received (content: ${json.message?.content?.length || 0} chars)`);
 
             if (json.message?.content) {
                 fullContent = json.message.content;
                 onToken?.(json.message.content);
             }
             if (json.message?.tool_calls) {
-                console.log('[LocalAI] Tool calls received:', JSON.stringify(json.message.tool_calls));
+                log(`[LocalAI] Tool calls received: ${json.message.tool_calls.length} calls`);
                 toolCalls = json.message.tool_calls;
             }
 
@@ -160,7 +165,7 @@ export class OllamaService {
             if (toolCalls.length === 0 && fullContent) {
                 const parsedToolCalls = this.parseToolCallsFromContent(fullContent);
                 if (parsedToolCalls.length > 0) {
-                    console.log('[LocalAI] Parsed tool calls from content:', JSON.stringify(parsedToolCalls));
+                    log(`[LocalAI] Parsed tool calls from content: ${parsedToolCalls.length} calls`);
                     toolCalls = parsedToolCalls;
                     // Tool call content'ini temizle (kullanıcıya göstermeye gerek yok)
                     fullContent = '';
@@ -190,7 +195,7 @@ export class OllamaService {
                             onToken?.(json.message.content);
                         }
                         if (json.message?.tool_calls) {
-                            console.log('[LocalAI] Tool calls received:', JSON.stringify(json.message.tool_calls));
+                            log(`[LocalAI] Tool calls received: ${json.message.tool_calls.length} calls`);
                             toolCalls = json.message.tool_calls;
                         }
                     } catch {
@@ -200,11 +205,7 @@ export class OllamaService {
             }
         }
 
-        console.log('[LocalAI] Chat response:', {
-            contentLength: fullContent.length,
-            toolCallCount: toolCalls.length,
-            toolCalls: toolCalls.map(tc => tc.function?.name)
-        });
+        log(`[LocalAI] Chat response: ${fullContent.length} chars, ${toolCalls.length} tool calls`);
 
         return { content: fullContent, toolCalls };
     }
@@ -220,21 +221,23 @@ export class OllamaService {
 
     async listModels(): Promise<string[]> {
         const url = `${this.baseUrl}/api/tags`;
-        console.log('[LocalAI] Fetching models from:', url);
+        log(`[LocalAI] Fetching models from: ${url}`);
 
         try {
             const response = await fetch(url);
-            console.log('[LocalAI] Response status:', response.status);
+            log(`[LocalAI] Response status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`Failed to list models: ${response.status}`);
             }
 
             const data = await response.json() as { models: Array<{ name: string }> };
-            console.log('[LocalAI] Models data:', data);
-            return data.models?.map(m => m.name) || [];
+            var models = data.models?.map(m => m.name) || [];
+            models = models.filter(name => name.toLowerCase().includes('obase'));
+            log(`[LocalAI] Found ${models.length} models`);
+            return models;
         } catch (err) {
-            console.error('[LocalAI] Fetch error:', err);
+            log(`[LocalAI] Fetch error: ${err}`);
             throw err;
         }
     }

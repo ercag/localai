@@ -3,7 +3,14 @@ import { OllamaService, OllamaMessage, ToolCall, OllamaTool } from './ollama';
 import { VllmService } from './vllmService';
 import { getOllamaTools, getSystemPrompt, executeTool, applyPendingEdit, rejectPendingEdit, applyAllPendingEdits, rejectAllPendingEdits, getPendingEditsCount, onPendingEditsChanged } from './tools';
 import { MemoryService, ChatSession } from './memory';
-import { showGeneratingStatus, updateGeneratingStatus, hideGeneratingStatus, showReadyStatus } from './extension';
+import { showGeneratingStatus, updateGeneratingStatus, hideGeneratingStatus, showReadyStatus, outputChannel } from './extension';
+
+export function log(message: string): void {
+    if (outputChannel) {
+        outputChannel.appendLine(message);
+    }
+    console.log(message);
+}
 
 export type ProviderType = 'ollama' | 'vllm';
 
@@ -24,8 +31,7 @@ export class ChatPanel {
     private readonly vllm: VllmService;
     private currentProvider: ProviderType = 'ollama';
     private messages: OllamaMessage[] = [];
-    private agentModel: string = '';
-    private coderModel: string = '';
+    private selectedModel: string = '';
     private abortController: AbortController | null = null;
     private memory: MemoryService;
     private currentSession: ChatSession | null = null;
@@ -60,17 +66,13 @@ export class ChatPanel {
                     case 'sendMessage':
                         await this.handleUserMessage(message.text, message.context);
                         break;
-                    case 'selectAgentModel':
-                        this.agentModel = message.model;
-                        break;
-                    case 'selectCoderModel':
-                        this.coderModel = message.model;
+                    case 'selectModel':
+                        this.selectedModel = message.model;
                         break;
                     case 'selectProvider':
                        this.currentProvider = message.provider as ProviderType;
-                        // Reset models so sendModelList() will pick correct defaults for new provider
-                        this.agentModel = '';
-                        this.coderModel = '';
+                        // Reset model so sendModelList() will pick correct default for new provider
+                        this.selectedModel = '';
 
                         console.log('[LocalAI] Provider changed to:', this.currentProvider);
                         await this.sendModelList();
@@ -88,7 +90,7 @@ export class ChatPanel {
                         break;
                     case 'newSession':
                         this.messages = [];
-                        this.currentSession = await this.memory.createNewSession(this.agentModel);
+                        this.currentSession = await this.memory.createNewSession(this.selectedModel);
                         break;
                     case 'loadSession':
                         await this.loadSession(message.sessionId);
@@ -225,9 +227,9 @@ export class ChatPanel {
         if (existingSession) {
             this.currentSession = existingSession;
             this.messages = existingSession.messages;
-            this.agentModel = existingSession.model;
+            this.selectedModel = existingSession.model;
         } else {
-            this.currentSession = await this.memory.createNewSession(this.agentModel);
+            this.currentSession = await this.memory.createNewSession(this.selectedModel);
         }
     }
 
@@ -237,7 +239,7 @@ export class ChatPanel {
         if (session) {
             this.currentSession = session;
             this.messages = session.messages;
-            this.agentModel = session.model;
+            this.selectedModel = session.model;
             this.panel.webview.postMessage({
                 command: 'loadedSession',
                 session: { id: session.id, title: session.title, model: session.model, messageCount: session.messages.length },
@@ -261,7 +263,7 @@ export class ChatPanel {
     private async saveCurrentSession(): Promise<void> {
         if (this.currentSession) {
             this.currentSession.messages = this.messages;
-            this.currentSession.model = this.agentModel;
+            this.currentSession.model = this.selectedModel;
             await this.memory.saveSession(this.currentSession);
         }
     }
@@ -342,15 +344,12 @@ export class ChatPanel {
         const provider = this.getActiveProvider();
         try {
             const models = await provider.listModels();
-            const toolCapable = ['llama3.1', 'llama3.2', 'llama3.3', 'mistral'];
-            if (models.length > 0 && !this.agentModel) {
-                this.agentModel = models.find(m => toolCapable.some(tc => m.toLowerCase().includes(tc))) || models[0];
-            }
-            if (models.length > 0 && !this.coderModel) {
-                this.coderModel = models.find(m => m.toLowerCase().includes('coder') || m.toLowerCase().includes('qwen')) || '';
+            const toolCapable = ['llama3.1', 'llama3.2', 'llama3.3', 'mistral', 'qwen', 'coder'];
+            if (models.length > 0 && !this.selectedModel) {
+                this.selectedModel = models.find(m => toolCapable.some(tc => m.toLowerCase().includes(tc))) || models[0];
             }
             this.panel.webview.postMessage({
-                command: 'modelList', models, agentModel: this.agentModel, coderModel: this.coderModel, provider: this.currentProvider
+                command: 'modelList', models, selectedModel: this.selectedModel, provider: this.currentProvider
             });
         } catch (error) {
             const errorText = this.currentProvider === 'ollama'
@@ -387,49 +386,79 @@ export class ChatPanel {
             } else {
                 this.panel.webview.postMessage({ command: 'error', text: error instanceof Error ? error.message : 'Bilinmeyen hata' });
             }
-        }
-
-        if (!this.waitingForApproval) {
+            // Error durumunda endResponse gönder
             this.panel.webview.postMessage({ command: 'endResponse' });
         }
     }
 
     private async runAgentLoop(): Promise<void> {
-        const maxIterations = 10;
+        // Claude Code-style agentic loop:
+        // - Soft limit: 15 iterations (safety rail)
+        // - Hard limit: 30 iterations (absolute max)
+        // - Natural termination: model stops calling tools
+        const SOFT_LIMIT = 15; // Uyarı ver
+        const HARD_LIMIT = 30; // Zorla durdur
         let iteration = 0;
         let statusUpdateInterval: NodeJS.Timeout | null = null;
         const loopStartTime = Date.now();
+        const recentToolCalls: string[] = []; // Son tool çağrılarını takip et
+        let progressMade = false; // İlerleme var mı?
+        let softLimitWarned = false;
 
         this.abortController = new AbortController();
 
-        const activeAgentModel = this.agentModel || this.coderModel;
-        if (!activeAgentModel) {
-            throw new Error('Lütfen en az bir model seçin');
+        if (!this.selectedModel) {
+            throw new Error('Lütfen bir model seçin');
         }
 
-        showGeneratingStatus(activeAgentModel);
+        showGeneratingStatus(this.selectedModel);
         statusUpdateInterval = setInterval(() => {
             updateGeneratingStatus(Math.floor((Date.now() - loopStartTime) / 1000));
         }, 1000);
 
         try {
-            while (iteration < maxIterations) {
+            while (iteration < HARD_LIMIT) {
+                // Soft limit'e ulaşınca uyar ama devam et
+                if (iteration === SOFT_LIMIT && !softLimitWarned) {
+                    softLimitWarned = true;
+                    log(`[LocalAI] ⚠️ Soft limit (${SOFT_LIMIT}) reached. Continuing up to ${HARD_LIMIT}...`);
+                    this.messages.push({
+                        role: 'system',
+                        content: `You've used ${SOFT_LIMIT} iterations. Try to complete the task in the next ${HARD_LIMIT - SOFT_LIMIT} steps. Be more decisive.`
+                    });
+                }
                 if (this.abortController?.signal.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
 
                 iteration++;
+                log(`[LocalAI] Starting iteration ${iteration}/${HARD_LIMIT}`);
+
+                // Context management: Eğer çok fazla mesaj varsa, eski tool result'ları özetle
+                let messagesToSend = this.messages;
+                const MESSAGE_LIMIT = 20; // Son 20 mesaj
+                if (messagesToSend.length > MESSAGE_LIMIT) {
+                    log(`[LocalAI] Context too long (${messagesToSend.length} messages). Compressing...`);
+                    // İlk user mesajı + son 20 mesajı tut
+                    const firstUserMsg = messagesToSend.find(m => m.role === 'user');
+                    const recentMessages = messagesToSend.slice(-MESSAGE_LIMIT);
+                    messagesToSend = firstUserMsg ? [firstUserMsg, ...recentMessages] : recentMessages;
+                }
 
                 const messagesWithSystem: OllamaMessage[] = [
                     { role: 'system', content: getSystemPrompt() },
-                    ...this.messages
+                    ...messagesToSend
                 ];
 
                 const tools = getOllamaTools();
                 const provider = this.getActiveProvider();
 
+                log(`[LocalAI] Sending request to ${this.currentProvider} with model ${this.selectedModel}`);
+                this.panel.webview.postMessage({ command: 'waitingForLLM' });
+                const requestStartTime = Date.now();
+
                 const { content, toolCalls } = await provider.chatWithTools(
-                    activeAgentModel,
+                    this.selectedModel,
                     messagesWithSystem,
                     tools,
                     (token) => {
@@ -437,6 +466,9 @@ export class ChatPanel {
                     },
                     this.abortController.signal
                 );
+
+                const requestDuration = ((Date.now() - requestStartTime) / 1000).toFixed(1);
+                log(`[LocalAI] Response received in ${requestDuration}s - content length: ${content?.length || 0}, toolCalls: ${toolCalls?.length || 0}`);
 
                 if (toolCalls && toolCalls.length > 0) {
                     this.messages.push({ role: 'assistant', content, tool_calls: toolCalls });
@@ -448,19 +480,75 @@ export class ChatPanel {
                         }
 
                         const toolName = toolCall.function.name;
-                        let toolParams = toolCall.function.arguments;
+                        const toolParams = toolCall.function.arguments;
 
-                        // Coder model için kod üretimi
-                        const needsCodeGeneration = ['write_file', 'edit_file'].includes(toolName)
-                            && this.coderModel && this.coderModel !== this.agentModel
-                            && (!toolParams.content || toolParams.content.length < 50);
+                        // Aynı tool çağrısını tekrar yapıyor mu kontrol et
+                        // ÖNEMLI: edit_file ve write_file için loop detection YAPMA - bunlar retry yapabilmeli
+                        const actionTools = ['edit_file', 'write_file'];
+                        const shouldCheckLoop = !actionTools.includes(toolName);
 
-                        if (needsCodeGeneration) {
-                            this.panel.webview.postMessage({ command: 'startCodeGeneration', coderModel: this.coderModel });
-                            const codeContent = await this.generateCodeWithCoderModel(toolName, toolParams);
-                            if (codeContent) toolParams = { ...toolParams, content: codeContent };
-                            this.panel.webview.postMessage({ command: 'endCodeGeneration' });
+                        if (shouldCheckLoop) {
+                            // Signature oluştur - read_file için satır numaralarını da dahil et
+                            let keyParam = '';
+                            if (toolName === 'read_file') {
+                                // Dosya + satır aralığı (farklı satırları okumak OK)
+                                const start = toolParams.start_line || '1';
+                                const end = toolParams.end_line || 'end';
+                                keyParam = `${toolParams.path}:${start}-${end}`;
+                            } else {
+                                keyParam = toolParams.path || toolParams.pattern || toolParams.command || JSON.stringify(toolParams);
+                            }
+                            const toolSignature = `${toolName}:${keyParam}`;
+                            const sameCallCount = recentToolCalls.filter(sig => sig === toolSignature).length;
+
+                            // read_file ve grep için daha agresif ol - 1 kere tekrarda uyar
+                            const strictTools = ['read_file', 'grep', 'search_files'];
+                            const maxAllowed = strictTools.includes(toolName) ? 1 : 2;
+
+                        if (sameCallCount >= maxAllowed) {
+                            log(`[LocalAI] ⚠️  Agent stuck in loop! Same tool called ${sameCallCount + 1} times: ${toolSignature}`);
+
+                            // Tool'a göre özel uyarı mesajı
+                            let warningMessage = '';
+                            if (toolName === 'read_file') {
+                                warningMessage = `STOP! You already read "${toolParams.path}" ${sameCallCount + 1} times. You have the file content. Now USE edit_file to fix the error!`;
+                            } else if (toolName === 'grep' || toolName === 'search_files') {
+                                warningMessage = `STOP! You already searched for "${toolParams.pattern}" ${sameCallCount + 1} times. You found what you need. Now take ACTION - use read_file or edit_file!`;
+                            } else if (toolName === 'list_files') {
+                                warningMessage = `STOP! You already listed this directory ${sameCallCount + 1} times. You know the files. Now OPEN a file and fix the issue!`;
+                            } else {
+                                warningMessage = `STOP! You called ${toolName} ${sameCallCount + 1} times with same parameters. Stop analyzing, START ACTING!`;
+                            }
+
+                            this.messages.push({
+                                role: 'tool',
+                                content: warningMessage
+                            });
+
+                            // UI'da uyarıyı göster
+                            this.panel.webview.postMessage({
+                                command: 'toolCall',
+                                name: 'system_warning',
+                                params: { message: `⚠️ Loop detected: ${toolName}` }
+                            });
+                            this.panel.webview.postMessage({
+                                command: 'toolResult',
+                                name: 'system_warning',
+                                result: `⚠️ ${warningMessage}`
+                            });
+
+                            recentToolCalls.push(toolSignature);
+                            continue;
                         }
+
+                            recentToolCalls.push(toolSignature);
+                            if (recentToolCalls.length > 10) recentToolCalls.shift(); // Son 10 çağrıyı tut
+                        } // shouldCheckLoop sonu
+
+                        log(`[LocalAI] Executing tool: ${toolName} (${Object.keys(toolParams).join(', ')})`);
+
+                        // Tool çağrısı yapılacağını bildir
+                        this.panel.webview.postMessage({ command: 'toolExecuting', name: toolName });
 
                         const displayParams = { ...toolParams };
                         if (['write_file', 'edit_file'].includes(toolName)) {
@@ -471,29 +559,59 @@ export class ChatPanel {
 
                         this.panel.webview.postMessage({ command: 'toolCall', name: toolName, params: displayParams });
 
-                        const toolResult = await executeTool(toolName, toolParams);
+                        const toolStartTime = Date.now();
+                        const toolResult = await executeTool(toolName, toolParams, { autoApprove: this.autoApproveMode });
+                        log(`[LocalAI] Tool ${toolName} completed in ${Date.now() - toolStartTime}ms`);
+
+                        // İlerleme var mı kontrol et (edit/write tool'ları progress sayılır)
+                        if (['write_file', 'edit_file'].includes(toolName) && !toolResult.includes('Error')) {
+                            progressMade = true;
+                            log(`[LocalAI] Progress made: ${toolName} succeeded`);
+                        }
 
                         let displayResult = toolResult;
-                        if (toolName === 'read_file') displayResult = '✓ dosya okundu';
-                        else if (toolName === 'write_file') displayResult = '✓ dosya yazıldı';
-                        else if (toolName === 'edit_file') displayResult = '✓ dosya düzenlendi';
+                        let snippet = '';
 
+                        if (toolName === 'read_file') {
+                            displayResult = '✓ dosya okundu';
+                            // İlk 3 satırı göster
+                            const lines = toolResult.split('\n').slice(0, 3);
+                            snippet = lines.join('\n');
+                        } else if (toolName === 'write_file') {
+                            displayResult = '✓ dosya yazıldı';
+                            const lines = (toolParams.content || '').split('\n').slice(0, 3);
+                            snippet = lines.join('\n');
+                        } else if (toolName === 'edit_file') {
+                            // Edit sonucunu kontrol et - başarılı mı?
+                            if (toolResult.includes('✓') || toolResult.includes('PENDING_EDIT')) {
+                                displayResult = '✓ dosya düzenlendi';
+                                // new_text'in ilk 3 satırını göster
+                                const lines = (toolParams.new_text || '').split('\n').slice(0, 3);
+                                snippet = lines.join('\n');
+                            } else if (toolResult.includes('Error') || toolResult.includes('not found')) {
+                                // Edit başarısız - detaylı göster
+                                displayResult = `❌ Edit failed: ${toolResult.substring(0, 100)}`;
+                                log(`[LocalAI] Edit failed: ${toolResult}`);
+                            } else {
+                                displayResult = '✓ dosya düzenlendi';
+                                const lines = (toolParams.new_text || '').split('\n').slice(0, 3);
+                                snippet = lines.join('\n');
+                            }
+                        }
+
+                        // Tool tamamlandığını bildir (thinking indicator'ı güncelle)
+                        this.panel.webview.postMessage({
+                            command: 'toolCompleted',
+                            name: toolName,
+                            result: displayResult,
+                            snippet: snippet,
+                            params: toolParams
+                        });
                         this.panel.webview.postMessage({ command: 'toolResult', name: toolName, result: displayResult });
                         this.messages.push({ role: 'tool', content: toolResult });
 
-                        if (['write_file', 'edit_file'].includes(toolName) && toolResult.includes('PENDING_EDIT')) {
-                            // Auto-approve modunda ise hemen onayla ve devam et
-                            if (this.autoApproveMode) {
-                                await applyAllPendingEdits();
-                                this.updatePendingEditsCount();
-                                this.panel.webview.postMessage({
-                                    command: 'toolResult',
-                                    name: toolName,
-                                    result: '✓ otomatik onaylandı'
-                                });
-                                continue;
-                            }
-
+                        // Auto-approve modunda PENDING_EDIT gelmez, direkt yazılır
+                        if (!this.autoApproveMode && ['write_file', 'edit_file'].includes(toolName) && toolResult.includes('PENDING_EDIT')) {
                             this.waitingForApproval = true;
                             this.lastPendingCount = getPendingEditsCount();
                             this.messages.push({ role: 'assistant', content: 'Değişiklikler diff editörde. Onaylayın veya reddedin.' });
@@ -513,39 +631,37 @@ export class ChatPanel {
                     break;
                 }
             }
+
+            // Hard limit'e ulaşıldı mı kontrol et
+            if (iteration >= HARD_LIMIT) {
+                log(`[LocalAI] 🛑 Hard limit (${HARD_LIMIT}) reached. Progress made: ${progressMade}`);
+
+                if (progressMade) {
+                    // İlerleme yapılmış - muhtemelen başarılı
+                    this.messages.push({
+                        role: 'assistant',
+                        content: `I made changes to the code. Hard limit (${HARD_LIMIT} iterations) reached. If you need more modifications, let me know!`
+                    });
+                    this.panel.webview.postMessage({ command: 'appendToken', token: `\n\n✓ *Changes completed (${iteration} iterations).*` });
+                } else {
+                    // İlerleme yok - takılmış
+                    this.messages.push({
+                        role: 'assistant',
+                        content: `⚠️ Hard limit (${HARD_LIMIT} iterations) reached without making changes. The task may be too complex or I need more specific guidance. Please break it down into smaller steps.`
+                    });
+                    this.panel.webview.postMessage({ command: 'appendToken', token: `\n\n⚠️ *Hard limit reached. No changes made.*` });
+                }
+            }
         } finally {
             if (statusUpdateInterval) clearInterval(statusUpdateInterval);
             hideGeneratingStatus();
             showReadyStatus();
             this.abortController = null;
-        }
-    }
 
-    private async generateCodeWithCoderModel(toolName: string, params: Record<string, string>): Promise<string | null> {
-        if (!this.coderModel) return null;
-
-        const userMessages = this.messages.filter(m => m.role === 'user');
-        const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
-
-        const coderPrompt = toolName === 'edit_file'
-            ? `Edit code based on: ${lastUserMessage}\nFile: ${params.path}\nOld text: ${params.old_text}\nProvide ONLY the new code.`
-            : `Generate code for: ${lastUserMessage}\nFile: ${params.path}\nProvide ONLY the file content.`;
-
-        try {
-            const codeResult = await this.getActiveProvider().chatWithTools(
-                this.coderModel,
-                [{ role: 'user', content: coderPrompt }],
-                [],
-                () => {},
-                this.abortController?.signal
-            );
-
-            let cleanCode = codeResult.content.trim();
-            const codeBlockMatch = cleanCode.match(/```[\w]*\n([\s\S]*?)```/);
-            if (codeBlockMatch) cleanCode = codeBlockMatch[1].trim();
-            return cleanCode;
-        } catch {
-            return null;
+            // Onay beklemiyorsak response'u kapat
+            if (!this.waitingForApproval) {
+                this.panel.webview.postMessage({ command: 'endResponse' });
+            }
         }
     }
 
@@ -721,6 +837,20 @@ export class ChatPanel {
             color: var(--text-dim);
         }
         .timeline-item.tool { padding-bottom: 8px; }
+        .timeline-item.tool-result { padding-bottom: 12px; }
+        .timeline-item.tool-result .timeline-dot {
+            width: 6px; height: 6px;
+            left: -25px; top: 6px;
+            border-color: var(--green);
+            background: var(--green);
+        }
+        .timeline-content.tool-snippet {
+            background: var(--bg-light);
+            border: 1px solid var(--border);
+            border-left: 2px solid var(--green);
+            padding: 8px 10px;
+            font-size: 11px;
+        }
         .generating-content {
             background: transparent !important;
             border: none !important;
@@ -743,6 +873,16 @@ export class ChatPanel {
             30% { transform: scale(1); opacity: 1; }
         }
         .tool-action { color: var(--cyan); }
+        .thinking-indicator {
+            color: var(--cyan);
+            font-size: 12px;
+            opacity: 0.8;
+            animation: fadeInOut 2s ease-in-out infinite;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
         /* Code */
         pre {
             background: var(--bg);
@@ -844,10 +984,8 @@ export class ChatPanel {
         <button id="historyBtn">History</button>
     </div>
     <div class="header model-row">
-        <span class="model-label">AGENT:</span>
-        <select id="agentModel"><option>Loading...</option></select>
-        <span class="model-label">CODER:</span>
-        <select id="coderModel"><option>Optional</option></select>
+        <span class="model-label">MODEL:</span>
+        <select id="selectedModel"><option>Loading...</option></select>
     </div>
     <div class="chat-container" id="chatContainer">
         <div class="timeline" id="chat">
@@ -880,8 +1018,7 @@ export class ChatPanel {
         const input = document.getElementById('input');
         const stopBtn = document.getElementById('stopBtn');
         const sendBtn = document.getElementById('sendBtn');
-        const agentModel = document.getElementById('agentModel');
-        const coderModel = document.getElementById('coderModel');
+        const selectedModel = document.getElementById('selectedModel');
         const providerSelect = document.getElementById('providerSelect');
         const apiUrl = document.getElementById('apiUrl');
         const fetchBtn = document.getElementById('fetchBtn');
@@ -899,8 +1036,7 @@ export class ChatPanel {
             } else if (provider === 'vllm') {
                 apiUrl.value = 'http://localhost:8000';
             }
-            agentModel.innerHTML = '<option value="">loading...</option>';
-            coderModel.innerHTML = '<option value="">loading...</option>';
+            selectedModel.innerHTML = '<option value="">loading...</option>';
             vscode.postMessage({ command: 'selectProvider', provider: provider });
         };
 
@@ -920,8 +1056,7 @@ export class ChatPanel {
         };
         stopBtn.onclick = () => vscode.postMessage({ command: 'stopGeneration' });
         sendBtn.onclick = send;
-        agentModel.onchange = () => vscode.postMessage({ command: 'selectAgentModel', model: agentModel.value });
-        coderModel.onchange = () => vscode.postMessage({ command: 'selectCoderModel', model: coderModel.value });
+        selectedModel.onchange = () => vscode.postMessage({ command: 'selectModel', model: selectedModel.value });
 
         input.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -987,8 +1122,7 @@ export class ChatPanel {
             const msg = e.data;
             switch(msg.command) {
                 case 'modelList':
-                    agentModel.innerHTML = msg.models.map(m => '<option value="'+m+'"'+(m===msg.agentModel?' selected':'')+'>'+m+'</option>').join('');
-                    coderModel.innerHTML = '<option value="">None</option>' + msg.models.map(m => '<option value="'+m+'"'+(m===msg.coderModel?' selected':'')+'>'+m+'</option>').join('');
+                    selectedModel.innerHTML = msg.models.map(m => '<option value="'+m+'"'+(m===msg.selectedModel?' selected':'')+'>'+m+'</option>').join('');
                     break;
                 case 'addMessage':
                     addLine(msg.role, msg.content);
@@ -1012,6 +1146,7 @@ export class ChatPanel {
                     currentLine = document.createElement('div');
                     currentLine.className = 'timeline-content generating-content';
                     currentLine._raw = '';
+                    currentLine.innerHTML = '<span class="thinking-indicator">💭 Düşünüyor...</span>';
 
                     item.appendChild(dot);
                     item.appendChild(header);
@@ -1049,6 +1184,71 @@ export class ChatPanel {
                     isResponding = false;
                     stopBtn.style.display = 'none';
                     currentLine = null;
+                    break;
+                case 'toolExecuting':
+                    if (currentLine && currentLine.classList.contains('generating-content')) {
+                        var toolNames = {
+                            'read_file': '📖 Dosya okuyor',
+                            'write_file': '📝 Dosya yazıyor',
+                            'edit_file': '✏️ Dosya düzenliyor',
+                            'list_files': '📁 Dosyaları listeleniyor',
+                            'grep': '🔍 Arama yapıyor',
+                            'run_terminal_command': '💻 Komut çalıştırıyor'
+                        };
+                        var statusText = toolNames[msg.name] || '🔧 ' + msg.name;
+                        currentLine.innerHTML = '<span class="thinking-indicator">' + statusText + '...</span>';
+                    }
+                    break;
+                case 'toolCompleted':
+                    // Thinking indicator'ı güncelle
+                    if (currentLine && currentLine.classList.contains('generating-content')) {
+                        var completedNames = {
+                            'read_file': '✓ Dosya okundu',
+                            'write_file': '✓ Dosya yazıldı',
+                            'edit_file': '✓ Dosya düzenlendi',
+                            'list_files': '✓ Dosyalar listelendi',
+                            'grep': '✓ Arama tamamlandı',
+                            'run_terminal_command': '✓ Komut çalıştırıldı'
+                        };
+                        var completedText = completedNames[msg.name] || '✓ ' + msg.name;
+                        currentLine.innerHTML = '<span class="thinking-indicator" style="color: var(--green)">' + completedText + '</span>';
+                    }
+
+                    // Code snippet göster (eğer varsa)
+                    if (msg.snippet && msg.snippet.trim()) {
+                        var snippetItem = document.createElement('div');
+                        snippetItem.className = 'timeline-item tool-result';
+
+                        var snippetDot = document.createElement('div');
+                        snippetDot.className = 'timeline-dot';
+
+                        var snippetContent = document.createElement('div');
+                        snippetContent.className = 'timeline-content tool-snippet';
+
+                        var fileName = msg.params?.path || 'file';
+                        var header = document.createElement('div');
+                        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--text-dim);font-size:11px;';
+                        header.innerHTML = '<span style="color:var(--green)">✓</span><span>' + escapeHtml(fileName) + '</span>';
+
+                        var codeBlock = document.createElement('pre');
+                        codeBlock.style.cssText = 'margin:0;padding:8px;background:var(--bg);border-radius:4px;font-size:11px;overflow-x:auto;max-height:120px;';
+                        var code = document.createElement('code');
+                        code.textContent = msg.snippet;
+                        codeBlock.appendChild(code);
+
+                        snippetContent.appendChild(header);
+                        snippetContent.appendChild(codeBlock);
+                        snippetItem.appendChild(snippetDot);
+                        snippetItem.appendChild(snippetContent);
+
+                        chat.appendChild(snippetItem);
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                    break;
+                case 'waitingForLLM':
+                    if (currentLine && currentLine.classList.contains('generating-content')) {
+                        currentLine.innerHTML = '<span class="thinking-indicator">⏳ Waiting for LLM response...</span>';
+                    }
                     break;
                 case 'toolCall':
                     var toolDesc = {'read_file':'📖 Reading','write_file':'📝 Writing','edit_file':'✏️ Editing','list_files':'📁 Listing','search_files':'🔍 Searching','run_terminal_command':'💻 Running'}[msg.name] || '🔧 ' + msg.name;
